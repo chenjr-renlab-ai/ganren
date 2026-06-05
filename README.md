@@ -37,6 +37,11 @@ uv run python -m ganren_platform.main
 uv run pytest -v
 ```
 
+## 使用手册
+
+- **完整使用手册（架平台 / 配 CC / 日常协作 / 故障排查）**：[`docs/USAGE.md`](docs/USAGE.md)
+- **产品演示动画**：浏览器打开 `product-demo.html`
+
 ## Spec & Plan
 
 - Spec：`docs/superpowers/specs/2026-06-05-ganren-collab-platform-design.md`

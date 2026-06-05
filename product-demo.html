@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>ganren — agent 协作平台</title>
+<style>
+:root {
+  --bg: #0a0a0b;
+  --card: #14141a;
+  --card-2: #1c1c24;
+  --border: #2a2a35;
+  --border-bright: #3d3d4a;
+  --accent: #00d9ff;
+  --accent-glow: rgba(0, 217, 255, 0.4);
+  --accent-2: #ff6b9d;
+  --text: #e8e8ed;
+  --muted: #88889a;
+  --muted-2: #56566a;
+  --green: #4ade80;
+  --orange: #fb923c;
+  --yellow: #facc15;
+  --red: #ef4444;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  background: radial-gradient(ellipse at top, #16161f 0%, var(--bg) 70%);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 32px 20px 80px;
+  line-height: 1.5;
+}
+.container { max-width: 1100px; margin: 0 auto; }
+
+/* ─────────── header ─────────── */
+header { margin-bottom: 36px; }
+.logo {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 13px; letter-spacing: 2px; color: var(--accent);
+  font-weight: 600; text-transform: uppercase;
+  margin-bottom: 14px;
+}
+.logo-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 12px var(--accent-glow);
+  animation: blink 2s ease-in-out infinite;
+}
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+h1 {
+  font-size: 42px; font-weight: 700;
+  background: linear-gradient(135deg, var(--text) 0%, var(--muted) 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  margin-bottom: 12px; letter-spacing: -1px; line-height: 1.15;
+}
+.lead {
+  color: var(--muted); font-size: 17px; max-width: 720px;
+  line-height: 1.6;
+}
+.lead b { color: var(--text); font-weight: 500; }
+
+/* ─────────── tabs ─────────── */
+.tabs {
+  display: flex; gap: 2px; margin-bottom: 26px;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  padding: 12px 18px; background: none; border: none;
+  color: var(--muted); font-size: 14px; cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.2s, border-color 0.2s;
+  white-space: nowrap; font-weight: 500;
+  font-family: inherit;
+}
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.panel { display: none; animation: fadeIn 0.4s ease-out; }
+.panel.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* ─────────── stage ─────────── */
+.stage {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px;
+}
+.stage-title {
+  font-size: 12px; color: var(--muted);
+  letter-spacing: 1.5px; text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.stage-subtitle {
+  font-size: 22px; font-weight: 600;
+  margin-bottom: 22px;
+}
+
+/* ─────────── story task card ─────────── */
+.story-card {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 14px 18px;
+  margin-bottom: 22px;
+}
+.story-card .label {
+  font-size: 10px; letter-spacing: 1.5px;
+  color: var(--muted); text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.story-card .title {
+  font-size: 15px; font-weight: 600; margin-bottom: 8px;
+}
+.story-card .meta {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  font-size: 12px; color: var(--muted);
+  align-items: center;
+}
+.tag-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+.tag-IC { background: rgba(0, 217, 255, 0.18); color: var(--accent); }
+.tag-Builder { background: rgba(74, 222, 128, 0.18); color: var(--green); }
+.tag-Coach { background: rgba(250, 204, 21, 0.18); color: var(--yellow); }
+.tag-DRI { background: rgba(255, 107, 157, 0.18); color: var(--accent-2); }
+.meta-sep {
+  display: inline-block; width: 3px; height: 3px;
+  border-radius: 50%; background: var(--muted-2);
+}
+
+/* ─────────── cast row ─────────── */
+.cast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: rgba(0,0,0,0.25);
+  border-radius: 8px;
+  margin-bottom: 18px;
+  font-size: 12px;
+}
+.cast-label {
+  color: var(--muted);
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  font-size: 10px;
+  margin-right: 4px;
+}
+.cast-member {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--muted);
+}
+.cast-member .ic { font-size: 16px; line-height: 1; }
+.cast-member.active { color: var(--text); }
+.cast-member.alice .name { color: #ffd56b; }
+.cast-member.bob   .name { color: #6bc7ff; }
+.cast-member.cc    .name { color: var(--accent); }
+.cast-member.platform .name { color: var(--green); }
+.cast-member.slack .name { color: var(--accent-2); }
+
+/* ─────────── timeline ─────────── */
+.timeline {
+  min-height: 360px;
+  max-height: 540px;
+  overflow-y: auto;
+  padding: 4px 4px 4px 0;
+  scroll-behavior: smooth;
+}
+.timeline::-webkit-scrollbar { width: 6px; }
+.timeline::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.msg {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 14px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.msg.visible { opacity: 1; transform: none; }
+.msg .avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 17px; line-height: 1;
+  flex-shrink: 0;
+}
+.msg .bubble-wrap {
+  flex-grow: 1; min-width: 0;
+}
+.msg .author {
+  font-size: 11px; color: var(--muted);
+  margin-bottom: 4px; font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.msg .author .role {
+  color: var(--muted-2); font-weight: 400; margin-left: 6px;
+}
+.msg .text {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  border-top-left-radius: 4px;
+  padding: 10px 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  display: inline-block;
+  max-width: 90%;
+}
+
+/* role-specific palettes */
+.msg.alice .author { color: #ffd56b; }
+.msg.alice .text  { background: rgba(255, 213, 107, 0.07); border-color: rgba(255, 213, 107, 0.25); }
+.msg.bob .author { color: #6bc7ff; }
+.msg.bob .text  { background: rgba(107, 199, 255, 0.07); border-color: rgba(107, 199, 255, 0.25); }
+.msg.cc .author { color: var(--accent); }
+.msg.cc .text  { background: rgba(0, 217, 255, 0.06); border-color: rgba(0, 217, 255, 0.25); }
+.msg.cc.thinking .text {
+  background: rgba(255, 107, 157, 0.06); border-color: rgba(255, 107, 157, 0.25);
+  font-style: italic;
+}
+.msg.platform .author { color: var(--green); }
+.msg.platform .text  { background: rgba(74, 222, 128, 0.07); border-color: rgba(74, 222, 128, 0.28); font-family: ui-monospace, "SF Mono", monospace; font-size: 13px; }
+.msg.slack .author { color: var(--accent-2); }
+.msg.slack .text  { background: rgba(255, 107, 157, 0.08); border-color: rgba(255, 107, 157, 0.3); font-family: ui-monospace, "SF Mono", monospace; font-size: 13px; }
+.msg.system .author { color: var(--muted); }
+.msg.system .text { background: transparent; border: 1px dashed var(--border-bright); color: var(--muted); font-size: 12px; }
+
+/* task proposal card embedded in a CC message */
+.msg .proposal {
+  margin-top: 8px;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text);
+}
+.msg .proposal .kv { display: flex; gap: 8px; }
+.msg .proposal .k { color: var(--muted); min-width: 110px; }
+.msg .proposal .v { color: var(--text); flex: 1; }
+.msg .proposal .v.muted { color: var(--muted); }
+
+/* candidate task list (Flow 2) */
+.msg .candidates {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.candidate {
+  background: rgba(0,0,0,0.35);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.candidate .ct {
+  font-size: 13px; font-weight: 600; margin-bottom: 4px;
+}
+.candidate .cm {
+  font-size: 11px; color: var(--muted);
+  display: flex; gap: 8px; align-items: center;
+}
+.candidate.picked {
+  border-color: var(--accent);
+  background: rgba(0, 217, 255, 0.07);
+  box-shadow: 0 0 12px rgba(0, 217, 255, 0.18);
+}
+
+/* code-diff style inside the timeline */
+.msg .diff {
+  margin-top: 8px;
+  background: rgba(0,0,0,0.35);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.msg .diff .add { color: var(--green); }
+.msg .diff .rm  { color: var(--red); }
+.msg .diff .ctx { color: var(--muted); }
+
+/* ─────────── controls ─────────── */
+.controls {
+  margin-top: 22px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.btn {
+  padding: 9px 18px;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: filter 0.2s;
+}
+.btn:hover { filter: brightness(1.1); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn.ghost {
+  background: transparent;
+  border: 1px solid var(--border-bright);
+  color: var(--text);
+}
+.step-indicator {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ─────────── data tab specifics ─────────── */
+.data-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 18px;
+  margin-bottom: 24px;
+}
+.kpi-card {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px;
+}
+.kpi-card .label {
+  color: var(--muted); font-size: 11px;
+  letter-spacing: 1px; text-transform: uppercase;
+}
+.kpi-card .value {
+  font-size: 28px; margin-top: 6px; font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.kpi-card .delta { color: var(--green); font-size: 13px; margin-top: 4px; }
+
+/* ─────────── state machine ─────────── */
+.statemachine {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+}
+.state-node {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+.state-node.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 16px var(--accent-glow);
+  background: rgba(0, 217, 255, 0.08);
+}
+.state-node.terminal { border-color: var(--green); }
+.state-node .state-status { color: var(--muted); font-size: 10px; font-weight: 400; letter-spacing: 1px; }
+
+.event-log {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 18px;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+  min-height: 120px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 18px;
+}
+.event-log-title {
+  color: var(--muted); font-size: 11px;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.event-log-entry {
+  display: flex; gap: 12px; padding: 4px 0;
+  opacity: 0; transform: translateX(-8px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.event-log-entry.visible { opacity: 1; transform: none; }
+.event-log-entry .ts { color: var(--muted); flex-shrink: 0; }
+.event-log-entry .type { color: var(--accent); font-weight: 600; }
+
+/* ─────────── footer ─────────── */
+footer {
+  margin-top: 50px;
+  padding-top: 22px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+  display: flex; gap: 22px; flex-wrap: wrap;
+}
+footer code {
+  background: var(--card-2);
+  padding: 2px 6px; border-radius: 4px;
+  font-family: ui-monospace, monospace;
+  font-size: 12px; color: var(--accent);
+}
+
+@media (max-width: 720px) {
+  .data-grid { grid-template-columns: 1fr; }
+  .statemachine { grid-template-columns: 1fr 1fr; }
+  h1 { font-size: 30px; }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <header>
+    <div class="logo"><span class="logo-dot"></span>ganren · v0.1</div>
+    <h1>把人与人的协作，变成 agent 间的接力</h1>
+    <p class="lead">
+      四个 flow 用同一个模拟任务串起来 ——
+      <b>把首页响应时间从 2.1s 压到 800ms 以内</b>。从 Alice 发布、到 Bob 接走、到中途求助、到最终关闭。
+    </p>
+  </header>
+
+  <div class="tabs">
+    <button class="tab active" data-tab="publish">① 发布</button>
+    <button class="tab" data-tab="claim">② 认领</button>
+    <button class="tab" data-tab="ask">③ 反馈循环</button>
+    <button class="tab" data-tab="signoff">④ 提交 & 关闭</button>
+    <button class="tab" data-tab="data">⑤ 数据流</button>
+    <button class="tab" data-tab="state">⑥ 状态机</button>
+  </div>
+
+  <!-- ────── PANEL 1: PUBLISH ────── -->
+  <div class="panel active" id="panel-publish">
+    <div class="stage">
+      <div class="stage-title">FLOW · 01</div>
+      <div class="stage-subtitle">Alice 跟 CC 聊一阵，把任务推到平台</div>
+
+      <div class="story-card">
+        <div class="label">演示任务（还没成形）</div>
+        <div class="title">把首页响应时间从 2.1s 压到 800ms 以内</div>
+        <div class="meta">
+          <span>状态：构思中</span>
+          <span class="meta-sep"></span>
+          <span>发布者：Alice</span>
+        </div>
+      </div>
+
+      <div class="cast">
+        <span class="cast-label">CAST</span>
+        <span class="cast-member alice"><span class="ic">👤</span><span class="name">Alice</span>· 发布者</span>
+        <span class="cast-member cc"><span class="ic">🤖</span><span class="name">CC (Alice 端)</span>· Claude Code</span>
+        <span class="cast-member platform"><span class="ic">🗄️</span><span class="name">ganren</span>· 平台</span>
+        <span class="cast-member slack"><span class="ic">💬</span><span class="name">Slack</span>· 通知</span>
+      </div>
+
+      <div class="timeline" id="tl-pub"></div>
+
+      <div class="controls">
+        <button class="btn" data-action="play" data-flow="pub">▶ 播放</button>
+        <button class="btn ghost" data-action="reset" data-flow="pub">↻ 重放</button>
+        <div class="step-indicator" id="step-pub">0 / 0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── PANEL 2: CLAIM ────── -->
+  <div class="panel" id="panel-claim">
+    <div class="stage">
+      <div class="stage-title">FLOW · 02</div>
+      <div class="stage-subtitle">Bob 扫一眼任务池，挑一个接</div>
+
+      <div class="story-card">
+        <div class="label">任务池里目前有</div>
+        <div class="title">#t_01 · 把首页响应时间从 2.1s 压到 800ms 以内</div>
+        <div class="meta">
+          <span class="tag-pill tag-Builder">Builder</span>
+          <span>L2 AI 介入</span><span class="meta-sep"></span>
+          <span>L3 agent 自主度</span><span class="meta-sep"></span>
+          <span>routine</span><span class="meta-sep"></span>
+          <span>状态：open</span>
+        </div>
+      </div>
+
+      <div class="cast">
+        <span class="cast-label">CAST</span>
+        <span class="cast-member bob"><span class="ic">👤</span><span class="name">Bob</span>· 协作者</span>
+        <span class="cast-member cc"><span class="ic">🤖</span><span class="name">CC (Bob 端)</span>· Claude Code</span>
+        <span class="cast-member platform"><span class="ic">🗄️</span><span class="name">ganren</span>· 平台</span>
+        <span class="cast-member slack"><span class="ic">💬</span><span class="name">Slack</span>· 通知</span>
+      </div>
+
+      <div class="timeline" id="tl-clm"></div>
+
+      <div class="controls">
+        <button class="btn" data-action="play" data-flow="clm">▶ 播放</button>
+        <button class="btn ghost" data-action="reset" data-flow="clm">↻ 重放</button>
+        <div class="step-indicator" id="step-clm">0 / 0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── PANEL 3: ASK / ANSWER ────── -->
+  <div class="panel" id="panel-ask">
+    <div class="stage">
+      <div class="stage-title">FLOW · 03</div>
+      <div class="stage-subtitle">Bob 干到一半遇到分歧，发起一轮异步反馈</div>
+
+      <div class="story-card">
+        <div class="label">进度</div>
+        <div class="title">#t_01 已 claim · Bob 正在改 hero 图加载策略</div>
+        <div class="meta">
+          <span>状态：claimed by bob</span>
+          <span class="meta-sep"></span>
+          <span>本轮要决定的事：hero 图 AVIF fallback 选 WebP 还是 PNG</span>
+        </div>
+      </div>
+
+      <div class="cast">
+        <span class="cast-label">CAST</span>
+        <span class="cast-member bob"><span class="ic">👤</span><span class="name">Bob</span>· 协作者</span>
+        <span class="cast-member cc"><span class="ic">🤖</span><span class="name">CC (Bob 端)</span></span>
+        <span class="cast-member platform"><span class="ic">🗄️</span><span class="name">ganren</span></span>
+        <span class="cast-member cc"><span class="ic">🤖</span><span class="name">CC (Alice 端)</span></span>
+        <span class="cast-member alice"><span class="ic">👤</span><span class="name">Alice</span>· 发布者</span>
+      </div>
+
+      <div class="timeline" id="tl-ask"></div>
+
+      <div class="controls">
+        <button class="btn" data-action="play" data-flow="ask">▶ 播放</button>
+        <button class="btn ghost" data-action="reset" data-flow="ask">↻ 重放</button>
+        <div class="step-indicator" id="step-ask">0 / 0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── PANEL 4: SIGN OFF ────── -->
+  <div class="panel" id="panel-signoff">
+    <div class="stage">
+      <div class="stage-title">FLOW · 04</div>
+      <div class="stage-subtitle">Bob 提交 → Alice 第一次 reject → Bob 修 → Alice sign-off</div>
+
+      <div class="story-card">
+        <div class="label">进度</div>
+        <div class="title">#t_01 · Bob 把 LCP 干到 720ms，准备提交</div>
+        <div class="meta">
+          <span>当前 LCP：</span>
+          <span style="color: var(--green); font-weight: 600;">720ms</span>
+          <span class="meta-sep"></span>
+          <span>目标：</span>
+          <span style="color: var(--green); font-weight: 600;">≤ 800ms ✓</span>
+        </div>
+      </div>
+
+      <div class="cast">
+        <span class="cast-label">CAST</span>
+        <span class="cast-member bob"><span class="ic">👤</span><span class="name">Bob</span></span>
+        <span class="cast-member cc"><span class="ic">🤖</span><span class="name">CC (Bob 端)</span></span>
+        <span class="cast-member platform"><span class="ic">🗄️</span><span class="name">ganren</span></span>
+        <span class="cast-member cc"><span class="ic">🤖</span><span class="name">CC (Alice 端)</span></span>
+        <span class="cast-member alice"><span class="ic">👤</span><span class="name">Alice</span></span>
+      </div>
+
+      <div class="timeline" id="tl-so"></div>
+
+      <div class="controls">
+        <button class="btn" data-action="play" data-flow="so">▶ 播放</button>
+        <button class="btn ghost" data-action="reset" data-flow="so">↻ 重放</button>
+        <div class="step-indicator" id="step-so">0 / 0</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── PANEL 5: DATA FLOW ────── -->
+  <div class="panel" id="panel-data">
+    <div class="stage">
+      <div class="stage-title">DATA · 05</div>
+      <div class="stage-subtitle">events 表是考核仪表盘的唯一数据源</div>
+
+      <div class="data-grid">
+        <div class="kpi-card">
+          <div class="label">已发布任务</div>
+          <div class="value" id="kpi-tasks">0</div>
+          <div class="delta">events.task.created</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">完成 / 已 sign-off</div>
+          <div class="value" id="kpi-closed">0</div>
+          <div class="delta">events.task.signed_off</div>
+        </div>
+        <div class="kpi-card">
+          <div class="label">向外求助（questions）</div>
+          <div class="value" id="kpi-q">0</div>
+          <div class="delta">questions.asked_by + 周窗口</div>
+        </div>
+      </div>
+
+      <div style="background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: 22px;">
+        <div style="font-size: 12px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 12px;">每个 event 的快照字段</div>
+        <div style="font-family: ui-monospace, monospace; font-size: 13px; line-height: 1.9;">
+          <span style="color: var(--muted);">events.</span>tags_snapshot = <span class="tag-pill tag-IC">IC</span><span class="tag-pill tag-Builder">Builder</span><span class="tag-pill tag-Coach">Coach</span><span class="tag-pill tag-DRI">DRI</span><br>
+          <span style="color: var(--muted);">events.</span>ai_involvement_snap = <span style="color: var(--accent);">L1 / L2 / L3</span><br>
+          <span style="color: var(--muted);">events.</span>agent_autonomy_snap = <span style="color: var(--accent);">L1 ... L5</span><br>
+          <span style="color: var(--muted);">events.</span>unit_id_snap = <span style="color: var(--accent);">squad / fleet / engine</span>
+        </div>
+        <p style="margin-top: 14px; color: var(--muted); font-size: 13px; line-height: 1.6;">
+          后期任务被 retag，<b style="color:var(--text);">历史 event 的标签快照不变</b> —— 切标签洗不掉低产。
+        </p>
+      </div>
+
+      <div style="margin-top: 18px; padding: 18px; background: rgba(0, 217, 255, 0.06); border: 1px solid rgba(0, 217, 255, 0.3); border-radius: 10px;">
+        <div style="font-weight: 600; margin-bottom: 8px;">⚠ 平台只出原始事件 + 聚合查询</div>
+        <div style="color: var(--muted); font-size: 14px; line-height: 1.6;">
+          不计算合成分、不暴露"开除"动作。地板灯（绿/黄/橙/红）由下游仪表盘按绝对地板算。<b style="color: var(--text);">诊断不裁决</b>。
+        </div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" data-action="play" data-flow="data">▶ 模拟一周流量</button>
+        <button class="btn ghost" data-action="reset" data-flow="data">↻ 重置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ────── PANEL 6: STATE MACHINE ────── -->
+  <div class="panel" id="panel-state">
+    <div class="stage">
+      <div class="stage-title">STATE MACHINE · 06</div>
+      <div class="stage-subtitle">task 状态机（点击播放走完整生命周期）</div>
+
+      <div class="statemachine" id="sm-states">
+        <div class="state-node" data-state="open">open<div class="state-status">待接</div></div>
+        <div class="state-node" data-state="claimed">claimed<div class="state-status">在干</div></div>
+        <div class="state-node" data-state="awaiting_review">awaiting_review<div class="state-status">待 review</div></div>
+        <div class="state-node terminal" data-state="closed">closed<div class="state-status">关闭</div></div>
+      </div>
+
+      <div style="margin-top: 28px; padding: 18px; background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; font-size: 13px; line-height: 1.9;">
+        <div style="color: var(--muted); margin-bottom: 8px; letter-spacing: 1px; font-size: 11px; text-transform: uppercase;">旁路</div>
+        <div><b>abandon</b> · 协作者主动放弃 → 回 <code style="color: var(--accent);">open</code>，task 回池</div>
+        <div><b>cancel</b> · 发布者撤销 → <code style="color: var(--accent);">closed</code>（awaiting_review 之后不可）</div>
+        <div><b>reject</b> · 发布者打回 → 回 <code style="color: var(--accent);">claimed</code>，<code style="color: var(--accent-2);">rework_count + 1</code></div>
+        <div><b>retag</b> · 不改 status，只改 tags + <code style="color: var(--accent-2);">tag_source='override'</code>，留审计 event</div>
+        <div><b>record_outcome</b> · 仅 closed 之后，事后回填用于 DRI 校准</div>
+      </div>
+
+      <div class="event-log" id="log-state">
+        <div class="event-log-title">EVENTS · 状态转移</div>
+      </div>
+
+      <div class="controls">
+        <button class="btn" data-action="play" data-flow="state">▶ 播放完整生命周期</button>
+        <button class="btn ghost" data-action="reset" data-flow="state">↻ 重置</button>
+        <div class="step-indicator" id="step-state">0 / 0</div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span>跑起来 · <code>uv run python -m ganren_platform.main</code></span>
+    <span>HTTP · <code>localhost:8787/v1/*</code></span>
+    <span>MCP · <code>localhost:8787/mcp/</code></span>
+    <span>测试 · 79 通过</span>
+  </footer>
+
+</div>
+
+<script>
+// ─────────── tab switching ───────────
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+  });
+});
+
+// role meta — single source for avatar + role label
+const ROLES = {
+  alice:    { avatar: '👤', role: '发布者' },
+  bob:      { avatar: '👤', role: '协作者' },
+  ccPub:    { avatar: '🤖', role: 'CC · Alice 端', cls: 'cc' },
+  ccBob:    { avatar: '🤖', role: 'CC · Bob 端',   cls: 'cc' },
+  ccThink:  { avatar: '🤖', role: 'CC（推理）',     cls: 'cc thinking' },
+  platform: { avatar: '🗄️', role: 'ganren 平台' },
+  slack:    { avatar: '💬', role: 'Slack 通知' },
+  system:   { avatar: '·',  role: '场景旁白' },
+};
+
+// ─────────── timeline player ───────────
+class TimelinePlayer {
+  constructor(prefix, steps) {
+    this.prefix = prefix;
+    this.steps = steps;
+    this.idx = 0;
+    this.timer = null;
+    this.tl = document.getElementById('tl-' + prefix);
+    this.stepIndicator = document.getElementById('step-' + prefix);
+  }
+  reset() {
+    if (this.timer) clearTimeout(this.timer);
+    this.idx = 0;
+    if (this.tl) this.tl.innerHTML = '';
+    if (this.stepIndicator) this.stepIndicator.textContent = `0 / ${this.steps.length}`;
+  }
+  play() {
+    this.reset();
+    setTimeout(() => this.advance(), 100);
+  }
+  advance() {
+    if (this.idx >= this.steps.length) return;
+    const step = this.steps[this.idx];
+    this.renderMessage(step);
+    this.idx++;
+    if (this.stepIndicator) this.stepIndicator.textContent = `${this.idx} / ${this.steps.length}`;
+    if (this.idx < this.steps.length) {
+      this.timer = setTimeout(() => this.advance(), step.delay || 1600);
+    }
+  }
+  renderMessage(step) {
+    const role = ROLES[step.who] || ROLES.system;
+    const wrap = document.createElement('div');
+    const baseClass = role.cls || step.who;
+    wrap.className = `msg ${baseClass}`;
+    wrap.innerHTML = `
+      <div class="avatar">${role.avatar}</div>
+      <div class="bubble-wrap">
+        <div class="author">${step.name || ''}<span class="role">${role.role}</span></div>
+        <div class="text">${step.text}${step.extra || ''}</div>
+      </div>
+    `;
+    this.tl.appendChild(wrap);
+    requestAnimationFrame(() => wrap.classList.add('visible'));
+    this.tl.scrollTop = this.tl.scrollHeight;
+  }
+}
+
+// ─────────── proposal / candidate / diff renderers ───────────
+function proposalCard({ title, desc, tags, ai, autonomy, difficulty, artifacts }) {
+  return `<div class="proposal">
+    <div class="kv"><span class="k">title</span><span class="v">${title}</span></div>
+    <div class="kv"><span class="k">description</span><span class="v muted">${desc}</span></div>
+    <div class="kv"><span class="k">tags</span><span class="v">${tags}</span></div>
+    <div class="kv"><span class="k">ai_involvement</span><span class="v">${ai}</span></div>
+    <div class="kv"><span class="k">agent_autonomy</span><span class="v">${autonomy}</span></div>
+    <div class="kv"><span class="k">difficulty</span><span class="v">${difficulty}</span></div>
+    <div class="kv"><span class="k">artifacts</span><span class="v muted">${artifacts}</span></div>
+  </div>`;
+}
+function candidateList(items) {
+  return `<div class="candidates">${items.map(it => `
+    <div class="candidate ${it.picked ? 'picked' : ''}">
+      <div class="ct">${it.id} · ${it.title}</div>
+      <div class="cm">
+        <span class="tag-pill tag-${it.tag}">${it.tag}</span>
+        <span>AI ${it.ai}</span>
+        <span>·</span>
+        <span>${it.difficulty}</span>
+        <span>·</span>
+        <span>${it.created}</span>
+        ${it.picked ? '<span style="margin-left:auto;color:var(--accent);font-weight:600;">← 我接这个</span>' : ''}
+      </div>
+    </div>
+  `).join('')}</div>`;
+}
+function diffBlock(lines) {
+  return `<div class="diff">${lines.map(l => {
+    if (l.startsWith('+')) return `<div class="add">${escape(l)}</div>`;
+    if (l.startsWith('-')) return `<div class="rm">${escape(l)}</div>`;
+    return `<div class="ctx">${escape(l)}</div>`;
+  }).join('')}</div>`;
+}
+function escape(s) {
+  return s.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
+}
+
+// ═══════════════ FLOW 1: 发布 ═══════════════
+const publishSteps = [
+  { who: 'alice', name: 'Alice', text: '我们首页 LCP 跑到 2.1s 了，4G 移动端用户已经在反馈了。' , delay: 1700 },
+  { who: 'ccPub', name: 'CC', text: '我看了下 RUM 上周数据，确实在 2.1s。你想多大动作？快速优化还是这次顺便重构 SSR？', delay: 2400 },
+  { who: 'alice', name: 'Alice', text: '快速。半天能闭环就行。我估摸 hero 图压一下 + main.js 拆 lazy 应该够了。', delay: 2400 },
+  { who: 'ccPub', name: 'CC', text: '同意。要找 bob 接吗？他熟前端打包这块。', delay: 1800 },
+  { who: 'alice', name: 'Alice', text: '对，发出去让他接。', delay: 1800 },
+  { who: 'ccThink', name: 'CC（推理中）', text: '从我们刚才的讨论我打包一个任务草稿给你 review：', extra: proposalCard({
+      title: '把首页响应时间从 2.1s 压到 800ms 以内',
+      desc: '首页 LCP 当前 2.1s（移动端 4G）。要求拉到 800ms 以内，先定位瓶颈再改。',
+      tags: '["Builder"]',
+      ai: 'L2',
+      autonomy: 'L3',
+      difficulty: 'routine',
+      artifacts: 'src/pages/index.tsx · RUM dashboard link'
+  }), delay: 3600 },
+  { who: 'alice', name: 'Alice', text: '把 description 加一句"先 RUM 验证再上线"。其他 OK，发吧。', delay: 2400 },
+  { who: 'ccPub', name: 'CC', text: '改好了，调 publish_task ...', delay: 1500 },
+  { who: 'platform', name: 'ganren', text: '✓ 已建任务 <b>#t_01</b>，状态 = <b>open</b>，挂入任务池。版本 0。', delay: 1600 },
+  { who: 'slack', name: 'Slack 通道', text: '📌 PUBLISH #t_01 把首页响应时间从 2.1s 压到 800ms 以内 [Builder] 由 alice 发布', delay: 1800 },
+  { who: 'system', name: '·', text: 'Alice 这边完事，任务在池子里等人接。', delay: 1500 },
+];
+
+// ═══════════════ FLOW 2: 认领 ═══════════════
+const claimSteps = [
+  { who: 'bob', name: 'Bob', text: '今天我下午有 2 小时空，看看池子里有什么能接的。', delay: 1700 },
+  { who: 'ccBob', name: 'CC', text: '我帮你拉一下 open 任务列表。', delay: 1500 },
+  { who: 'ccBob', name: 'CC', text: '池子里当前 3 个，按你强项排了一下：', extra: candidateList([
+      { id: '#t_01', title: '把首页响应时间从 2.1s 压到 800ms 以内', tag: 'Builder', ai: 'L2', difficulty: 'routine', created: '刚刚 by alice', picked: true },
+      { id: '#t_02', title: '迁移 webhook 接收链路到新队列',                 tag: 'IC',      ai: 'L2', difficulty: 'routine', created: '2h by carol' },
+      { id: '#t_03', title: '决定是否切换 DB 主备策略',                     tag: 'DRI',     ai: 'L1', difficulty: 'hard',    created: '昨天 by dan' },
+  ]), delay: 3600 },
+  { who: 'ccBob', name: 'CC', text: '你列表只看到 description 和标签 —— 想看完整 context 必须先 claim。这是平台故意的，防止"看一眼就走"。', delay: 3000 },
+  { who: 'bob', name: 'Bob', text: '#t_01 看着合适，AVIF/lazy 我熟。接它。', delay: 2200 },
+  { who: 'ccBob', name: 'CC', text: '帮你 claim ...', delay: 1300 },
+  { who: 'platform', name: 'ganren', text: '✓ #t_01 已被 <b>bob</b> 认领。其他人此刻再 claim 会拿到 409 already_claimed。同时把完整 context_summary + artifacts 推回给你。', delay: 2400 },
+  { who: 'ccBob', name: 'CC', text: 'context 我注入到当前会话了，同时落到 <code>./.ganren/task-t_01.md</code> 方便你或我下次续干时翻。摘要：', extra: proposalCard({
+      title: '把首页响应时间从 2.1s 压到 800ms 以内',
+      desc: 'LCP 2.1s（移动端 4G）。已尝试 preconnect 无效。建议：hero 走 AVIF + 预加载、main.js 拆 lazy、fold-above 关键 CSS inline。先 RUM 验证再上线。',
+      tags: '["Builder"]',
+      ai: 'L2',
+      autonomy: 'L3',
+      difficulty: 'routine',
+      artifacts: 'src/pages/index.tsx · RUM dashboard link'
+  }), delay: 3600 },
+  { who: 'slack', name: 'Slack 通道', text: '🙋 CLAIM #t_01 被 bob 接走', delay: 1600 },
+  { who: 'bob', name: 'Bob', text: '可以了，开干。', delay: 1500 },
+];
+
+// ═══════════════ FLOW 3: 反馈循环 ═══════════════
+const askSteps = [
+  { who: 'bob', name: 'Bob', text: 'hero 图我打算这样：', extra: diffBlock([
+      ' <picture>',
+      '+  <source srcset="/hero.avif" type="image/avif">',
+      '+  <source srcset="/hero.webp" type="image/webp">',
+      '-  <img src="/hero.png" alt="">',
+      '+  <img src="/hero.png" alt="">  // fallback',
+      ' </picture>'
+  ]), delay: 3600 },
+  { who: 'bob', name: 'Bob', text: '但 fallback 留 PNG 还是降级到 WebP？影响 IE 11 / 老 Edge。这事我替 Alice 定不了，帮我问下。', delay: 2800 },
+  { who: 'ccBob', name: 'CC', text: '好，我把"为啥问"压成一句话作为 ctx_summary，再把我们刚才整段讨论作为 ctx_full 一起带过去 ——发布者扫 inbox 时只看摘要，需要时再展开全文。', delay: 3400 },
+  { who: 'platform', name: 'ganren', text: '✓ questions #q_07 已收，关联 #t_01，状态 = open。Alice 频道发了通知（只 summary）。', delay: 1800 },
+  { who: 'slack', name: 'Slack 通道', text: '❓ Q @alice #t_01: hero 图 AVIF fallback 选 WebP 还是 PNG？影响老浏览器兼容', delay: 1800 },
+  { who: 'system', name: '·', text: '······ 异步 ······', delay: 1500 },
+  { who: 'alice', name: 'Alice', text: '收到 Slack ping，我让 CC 看下 inbox。', delay: 1800 },
+  { who: 'ccPub', name: 'CC', text: 'Alice 这边 inbox 里有 1 个未答问题：bob 在 #t_01 问 AVIF fallback。展开 ctx_full 看完了：', extra: `<div class="proposal"><div class="kv"><span class="k">来自</span><span class="v">bob</span></div><div class="kv"><span class="k">问题</span><span class="v">hero 图 AVIF fallback 选 WebP 还是 PNG？</span></div><div class="kv"><span class="k">摘要</span><span class="v muted">影响 IE 11 / 老 Edge 兼容</span></div></div>`, delay: 3600 },
+  { who: 'alice', name: 'Alice', text: 'WebP 就行，我们 Q1 已经把 IE 11 从支持矩阵砍了。让他直接 WebP。', delay: 2600 },
+  { who: 'ccPub', name: 'CC', text: '帮你回 ...', delay: 1300 },
+  { who: 'platform', name: 'ganren', text: '✓ #q_07 已 answered。Bob 频道发了通知，他下次 inbox 就能看到。', delay: 1800 },
+  { who: 'slack', name: 'Slack 通道', text: '💬 A @bob #t_01 已回复', delay: 1600 },
+  { who: 'system', name: '·', text: '······ Bob 回到工位 ······', delay: 1300 },
+  { who: 'ccBob', name: 'CC', text: '看到 Alice 回了：用 WebP fallback，IE 11 不在支持矩阵。我把 PNG 那行删掉，改成 WebP fallback。', delay: 3000 },
+  { who: 'bob', name: 'Bob', text: '继续干。', delay: 1500 },
+];
+
+// ═══════════════ FLOW 4: 提交 & 关闭 ═══════════════
+const signOffSteps = [
+  { who: 'bob', name: 'Bob', text: '改完了。重跑 RUM 模拟：LCP 720ms，达标。', delay: 2200 },
+  { who: 'ccBob', name: 'CC', text: '帮你写个 submit summary。包括：实际改动、RUM 数据、还剩什么没做。', delay: 2400 },
+  { who: 'ccBob', name: 'CC', text: '提交 ...', delay: 1300 },
+  { who: 'platform', name: 'ganren', text: '✓ #t_01 状态 = <b>awaiting_review</b>，等 alice 看。', delay: 1800 },
+  { who: 'slack', name: 'Slack 通道', text: '✅ REVIEW @alice #t_01 待 review', delay: 1700 },
+  { who: 'alice', name: 'Alice', text: '看一下。', delay: 1500 },
+  { who: 'ccPub', name: 'CC', text: 'Bob 提交了 #t_01。改了 3 处：hero 走 AVIF+WebP fallback、main.js 拆 lazy、fold-above CSS inline。RUM 显示 LCP 720ms。', delay: 3000 },
+  { who: 'alice', name: 'Alice', text: '等等，他 main.js 拆 lazy 是怎么拆的？我们 SPA hydration 依赖那个文件早加载，拆错了首屏会闪。', delay: 3000 },
+  { who: 'ccPub', name: 'CC', text: '看了 diff —— 他把整个 main.js 都 lazy import 了，包括 hydration 入口。这会破。要 reject 让他改吗？', delay: 3000 },
+  { who: 'alice', name: 'Alice', text: 'Reject。说清楚：只 lazy 非关键路径，hydration 入口必须 eager。', delay: 2400 },
+  { who: 'platform', name: 'ganren', text: '↩ #t_01 reject · 回到 <b>claimed</b>，<b>rework_count: 0 → 1</b>，hint 已带上。', delay: 2000 },
+  { who: 'slack', name: 'Slack 通道', text: '↩️ REJECT @bob #t_01 打回：只 lazy 非关键路径，hydration 入口必须 eager', delay: 1700 },
+  { who: 'system', name: '·', text: '······ Bob 改 ······', delay: 1400 },
+  { who: 'bob', name: 'Bob', text: 'OK 我把 hydration 入口拎出来 eager，剩下的才 lazy。再 submit。', delay: 2400 },
+  { who: 'platform', name: 'ganren', text: '✓ #t_01 状态 = <b>awaiting_review</b>（rework_count 仍 = 1，累计在任务上）', delay: 1700 },
+  { who: 'alice', name: 'Alice', text: '这次对了。Sign off。', delay: 1800 },
+  { who: 'platform', name: 'ganren', text: '🎉 #t_01 状态 = <b>closed</b>。本任务从发布到关闭共：1 次 question、1 次 reject、闭环。', delay: 2200 },
+  { who: 'slack', name: 'Slack 通道', text: '🎉 CLOSE #t_01 关闭', delay: 1500 },
+  { who: 'system', name: '·', text: 'events 表里这条任务一生产生了 ~8 条事件，全带 tags_snapshot=["Builder"]、ai=L2、autonomy=L3 —— 后续 retag 也不影响这批历史数据。', delay: 2500 },
+];
+
+// ═══════════════ data + state (sub-tabs unchanged) ═══════════════
+class SimplePlayer {
+  constructor(prefix, steps) {
+    this.prefix = prefix; this.steps = steps; this.idx = 0; this.timer = null;
+    this.stepIndicator = document.getElementById('step-' + prefix);
+    this.logEl = document.getElementById('log-' + prefix);
+  }
+  reset() {
+    if (this.timer) clearTimeout(this.timer);
+    this.idx = 0;
+    if (this.logEl) {
+      const title = this.logEl.querySelector('.event-log-title');
+      this.logEl.innerHTML = '';
+      if (title) this.logEl.appendChild(title);
+    }
+    document.querySelectorAll('#panel-state .state-node').forEach(el => el.classList.remove('active'));
+    if (this.stepIndicator) this.stepIndicator.textContent = `0 / ${this.steps.length}`;
+  }
+  play() { this.reset(); setTimeout(() => this.advance(), 100); }
+  advance() {
+    if (this.idx >= this.steps.length) return;
+    const step = this.steps[this.idx];
+    if (step.state) {
+      document.querySelectorAll('#panel-state .state-node').forEach(el => el.classList.remove('active'));
+      const el = document.querySelector(`#panel-state .state-node[data-state="${step.state}"]`);
+      if (el) el.classList.add('active');
+    }
+    if (step.event && this.logEl) {
+      const entry = document.createElement('div');
+      entry.className = 'event-log-entry';
+      const ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+      entry.innerHTML = `<span class="ts">${ts}</span><span class="type">${step.event.tag}</span><span>${step.event.text}</span>`;
+      this.logEl.appendChild(entry);
+      requestAnimationFrame(() => entry.classList.add('visible'));
+      this.logEl.scrollTop = this.logEl.scrollHeight;
+    }
+    if (step.kpi) {
+      const el = document.getElementById('kpi-' + step.kpi.key);
+      if (el) el.textContent = step.kpi.value;
+    }
+    this.idx++;
+    if (this.stepIndicator) this.stepIndicator.textContent = `${this.idx} / ${this.steps.length}`;
+    if (this.idx < this.steps.length) {
+      this.timer = setTimeout(() => this.advance(), step.delay || 1200);
+    }
+  }
+}
+
+const dataSteps = [
+  { kpi: { key: 'tasks', value: 7 } },
+  { kpi: { key: 'tasks', value: 12 } },
+  { kpi: { key: 'closed', value: 3 } },
+  { kpi: { key: 'q', value: 4 } },
+  { kpi: { key: 'tasks', value: 18 } },
+  { kpi: { key: 'closed', value: 9 } },
+  { kpi: { key: 'q', value: 6 } },
+];
+
+const stateSteps = [
+  { state: 'open',             event: { tag: 'state', text: '(none) → open · publish_task' } },
+  { state: 'claimed',          event: { tag: 'state', text: 'open → claimed · claim_task (bob)' } },
+  { state: 'awaiting_review',  event: { tag: 'state', text: 'claimed → awaiting_review · submit_for_review' } },
+  { state: 'claimed',          event: { tag: 'state', text: 'awaiting_review → claimed · reject_task (rework_count: 0 → 1)' } },
+  { state: 'awaiting_review',  event: { tag: 'state', text: 'claimed → awaiting_review · 重新 submit' } },
+  { state: 'closed',           event: { tag: 'state', text: 'awaiting_review → closed · sign_off_task ✓' } },
+];
+
+// ─────────── wire up ───────────
+const players = {
+  pub: new TimelinePlayer('pub', publishSteps),
+  clm: new TimelinePlayer('clm', claimSteps),
+  ask: new TimelinePlayer('ask', askSteps),
+  so:  new TimelinePlayer('so',  signOffSteps),
+  data: new SimplePlayer('data', dataSteps),
+  state: new SimplePlayer('state', stateSteps),
+};
+
+Object.values(players).forEach(p => {
+  if (p.stepIndicator) p.stepIndicator.textContent = `0 / ${p.steps.length}`;
+});
+
+document.querySelectorAll('[data-action]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const player = players[btn.dataset.flow];
+    if (!player) return;
+    if (btn.dataset.action === 'play') player.play();
+    else player.reset();
+  });
+});
+
+window.addEventListener('load', () => {
+  setTimeout(() => players.pub.play(), 600);
+});
+</script>
+</body>
+</html>
