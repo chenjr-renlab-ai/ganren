@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import BackgroundTasks, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
@@ -9,7 +10,17 @@ def get_actor(x_actor: str = Header(...)) -> str:
     return x_actor
 
 def create_app(*, db_path: str, slack_webhook_url: Optional[str]) -> FastAPI:
-    app = FastAPI(title="ganren-platform")
+    from ..mcp_api.server import build_mcp
+    mcp = build_mcp(db_path=db_path)
+    mcp_app = mcp.streamable_http_app()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # Run the FastMCP session manager so its task group is initialized.
+        async with mcp.session_manager.run():
+            yield
+
+    app = FastAPI(title="ganren-platform", lifespan=lifespan)
     app.state.db_path = db_path
     app.state.slack_webhook_url = slack_webhook_url
 
@@ -30,6 +41,8 @@ def create_app(*, db_path: str, slack_webhook_url: Optional[str]) -> FastAPI:
     @app.get("/healthz")
     def healthz():
         return {"ok": True}
+
+    app.mount("/mcp", mcp_app)
 
     return app
 
