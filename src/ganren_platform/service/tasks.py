@@ -239,3 +239,107 @@ def cancel_task(conn: sqlite3.Connection, *, actor: str, task_id: str, reason: s
             agent_autonomy_snap=row["agent_autonomy"],
             unit_id_snap=row["unit_id"],
         )
+
+def submit_for_review(conn: sqlite3.Connection, *, actor: str, task_id: str, summary: str) -> None:
+    from ..errors import InvalidState, NotAllowed
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    if row["status"] != "claimed":
+        raise InvalidState(
+            f"cannot submit task in status {row['status']}",
+            task_id=task_id, current_status=row["status"],
+        )
+    if row["claimed_by"] != actor:
+        raise NotAllowed("only claimer can submit", task_id=task_id)
+    submitted_at = now_iso()
+    with transaction(conn):
+        cursor = conn.execute(
+            "UPDATE tasks SET status='awaiting_review', submitted_at=?, "
+            "version=version+1 WHERE id=? AND status='claimed' AND version=?",
+            (submitted_at, task_id, row["version"]),
+        )
+        if cursor.rowcount == 0:
+            raise InvalidState("task state changed concurrently", task_id=task_id)
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.submitted",
+            actor=actor,
+            payload={"summary": summary},
+            tags_snapshot=json.loads(row["tags"]),
+            ai_involvement_snap=row["ai_involvement"],
+            agent_autonomy_snap=row["agent_autonomy"],
+            unit_id_snap=row["unit_id"],
+        )
+
+def reject_task(
+    conn: sqlite3.Connection, *, actor: str, task_id: str, reason: str,
+    hints: Optional[str] = None,
+) -> None:
+    from ..errors import InvalidState, NotAllowed
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    if row["created_by"] != actor:
+        raise NotAllowed("only creator can reject", task_id=task_id)
+    if row["status"] != "awaiting_review":
+        raise InvalidState(
+            f"cannot reject task in status {row['status']}",
+            task_id=task_id, current_status=row["status"],
+        )
+    with transaction(conn):
+        cursor = conn.execute(
+            "UPDATE tasks SET status='claimed', rework_count=rework_count+1, "
+            "submitted_at=NULL, version=version+1 "
+            "WHERE id=? AND status='awaiting_review' AND version=?",
+            (task_id, row["version"]),
+        )
+        if cursor.rowcount == 0:
+            raise InvalidState("task state changed concurrently", task_id=task_id)
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.rejected",
+            actor=actor,
+            payload={"reason": reason, "hints": hints},
+            tags_snapshot=json.loads(row["tags"]),
+            ai_involvement_snap=row["ai_involvement"],
+            agent_autonomy_snap=row["agent_autonomy"],
+            unit_id_snap=row["unit_id"],
+        )
+
+def sign_off_task(
+    conn: sqlite3.Connection, *, actor: str, task_id: str, comment: Optional[str] = None,
+) -> None:
+    from ..errors import InvalidState, NotAllowed
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    if row["created_by"] != actor:
+        raise NotAllowed("only creator can sign off", task_id=task_id)
+    if row["status"] != "awaiting_review":
+        raise InvalidState(
+            f"cannot sign off task in status {row['status']}",
+            task_id=task_id, current_status=row["status"],
+        )
+    closed_at = now_iso()
+    with transaction(conn):
+        cursor = conn.execute(
+            "UPDATE tasks SET status='closed', closed_at=?, version=version+1 "
+            "WHERE id=? AND status='awaiting_review' AND version=?",
+            (closed_at, task_id, row["version"]),
+        )
+        if cursor.rowcount == 0:
+            raise InvalidState("task state changed concurrently", task_id=task_id)
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.signed_off",
+            actor=actor,
+            payload={"comment": comment},
+            tags_snapshot=json.loads(row["tags"]),
+            ai_involvement_snap=row["ai_involvement"],
+            agent_autonomy_snap=row["agent_autonomy"],
+            unit_id_snap=row["unit_id"],
+        )
