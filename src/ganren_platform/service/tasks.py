@@ -171,3 +171,71 @@ def list_open_tasks(
         wanted = set(tags)
         items = [it for it in items if wanted & set(it.tags)]
     return items
+
+def abandon_task(conn: sqlite3.Connection, *, actor: str, task_id: str, reason: str) -> None:
+    from ..errors import InvalidState, NotAllowed
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    if row["status"] != "claimed":
+        raise InvalidState(
+            f"cannot abandon task in status {row['status']}",
+            task_id=task_id, current_status=row["status"],
+        )
+    if row["claimed_by"] != actor:
+        raise NotAllowed(
+            f"only claimer can abandon",
+            task_id=task_id, claimed_by=row["claimed_by"],
+        )
+    with transaction(conn):
+        cursor = conn.execute(
+            "UPDATE tasks SET status='open', claimed_by=NULL, claimed_at=NULL, "
+            "version=version+1 WHERE id=? AND status='claimed' AND version=?",
+            (task_id, row["version"]),
+        )
+        if cursor.rowcount == 0:
+            raise InvalidState("task state changed concurrently", task_id=task_id)
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.abandoned",
+            actor=actor,
+            payload={"reason": reason},
+            tags_snapshot=json.loads(row["tags"]),
+            ai_involvement_snap=row["ai_involvement"],
+            agent_autonomy_snap=row["agent_autonomy"],
+            unit_id_snap=row["unit_id"],
+        )
+
+def cancel_task(conn: sqlite3.Connection, *, actor: str, task_id: str, reason: str) -> None:
+    from ..errors import InvalidState, NotAllowed
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    if row["created_by"] != actor:
+        raise NotAllowed("only creator can cancel", task_id=task_id)
+    if row["status"] not in ("open", "claimed"):
+        raise InvalidState(
+            f"cannot cancel task in status {row['status']}",
+            task_id=task_id, current_status=row["status"],
+        )
+    closed_at = now_iso()
+    with transaction(conn):
+        cursor = conn.execute(
+            "UPDATE tasks SET status='closed', closed_at=?, version=version+1 "
+            "WHERE id=? AND status IN ('open','claimed') AND version=?",
+            (closed_at, task_id, row["version"]),
+        )
+        if cursor.rowcount == 0:
+            raise InvalidState("task state changed concurrently", task_id=task_id)
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.cancelled",
+            actor=actor,
+            payload={"reason": reason},
+            tags_snapshot=json.loads(row["tags"]),
+            ai_involvement_snap=row["ai_involvement"],
+            agent_autonomy_snap=row["agent_autonomy"],
+            unit_id_snap=row["unit_id"],
+        )
