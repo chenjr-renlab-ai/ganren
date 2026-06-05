@@ -1,0 +1,113 @@
+import json
+import sqlite3
+from typing import Optional
+from ..models import (
+    PublishTaskRequest, TaskFull, TaskListItem, Artifact, DecisionRecord, Outcome,
+    QuestionOut,
+)
+from ..errors import TaskNotFound
+from ..db import transaction
+from .events import insert_event, new_id, now_iso
+
+def _row_to_task_full(row: sqlite3.Row, questions: list[QuestionOut]) -> TaskFull:
+    return TaskFull(
+        id=row["id"],
+        title=row["title"],
+        description=row["description"],
+        context_summary=row["context_summary"],
+        artifacts=[Artifact(**a) for a in json.loads(row["artifacts"])],
+        tags=json.loads(row["tags"]),
+        tag_source=row["tag_source"],
+        ai_involvement=row["ai_involvement"],
+        agent_autonomy=row["agent_autonomy"],
+        difficulty=row["difficulty"],
+        decision_record=(
+            DecisionRecord(**json.loads(row["decision_record"]))
+            if row["decision_record"] else None
+        ),
+        outcome=(
+            Outcome(**json.loads(row["outcome"]))
+            if row["outcome"] else None
+        ),
+        rework_count=row["rework_count"],
+        escalated=bool(row["escalated"]),
+        unit_id=row["unit_id"],
+        status=row["status"],
+        created_by=row["created_by"],
+        claimed_by=row["claimed_by"],
+        created_at=row["created_at"],
+        claimed_at=row["claimed_at"],
+        submitted_at=row["submitted_at"],
+        closed_at=row["closed_at"],
+        version=row["version"],
+        question_history=questions,
+    )
+
+def _row_to_question(row: sqlite3.Row) -> QuestionOut:
+    return QuestionOut(
+        id=row["id"],
+        task_id=row["task_id"],
+        asked_by=row["asked_by"],
+        question=row["question"],
+        ctx_summary=row["ctx_summary"],
+        ctx_full=row["ctx_full"],
+        answer=row["answer"],
+        answered_by=row["answered_by"],
+        status=row["status"],
+        asked_at=row["asked_at"],
+        answered_at=row["answered_at"],
+    )
+
+def _row_to_list_item(row: sqlite3.Row) -> TaskListItem:
+    return TaskListItem(
+        id=row["id"],
+        title=row["title"],
+        description=row["description"],
+        tags=json.loads(row["tags"]),
+        ai_involvement=row["ai_involvement"],
+        agent_autonomy=row["agent_autonomy"],
+        difficulty=row["difficulty"],
+        created_by=row["created_by"],
+    )
+
+def publish_task(conn: sqlite3.Connection, *, actor: str, req: PublishTaskRequest) -> str:
+    task_id = new_id()
+    created_at = now_iso()
+    with transaction(conn):
+        conn.execute(
+            "INSERT INTO tasks ("
+            "id, title, description, context_summary, artifacts, tags, "
+            "tag_source, ai_involvement, agent_autonomy, difficulty, "
+            "decision_record, status, created_by, created_at, version, unit_id"
+            ") VALUES (?, ?, ?, ?, ?, ?, 'auto', ?, ?, ?, ?, 'open', ?, ?, 0, ?)",
+            (
+                task_id, req.title, req.description, req.context_summary,
+                json.dumps([a.model_dump(exclude_none=True) for a in req.artifacts]),
+                json.dumps(req.tags),
+                req.ai_involvement, req.agent_autonomy, req.difficulty,
+                json.dumps(req.decision_record.model_dump()) if req.decision_record else None,
+                actor, created_at, req.unit_id,
+            ),
+        )
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.created",
+            actor=actor,
+            payload={"title": req.title, "tags": req.tags},
+            tags_snapshot=req.tags,
+            ai_involvement_snap=req.ai_involvement,
+            agent_autonomy_snap=req.agent_autonomy,
+            unit_id_snap=req.unit_id,
+        )
+    return task_id
+
+def get_task(conn: sqlite3.Connection, *, task_id: str) -> TaskFull:
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    q_rows = conn.execute(
+        "SELECT * FROM questions WHERE task_id=? ORDER BY asked_at",
+        (task_id,),
+    ).fetchall()
+    return _row_to_task_full(row, [_row_to_question(q) for q in q_rows])
