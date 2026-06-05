@@ -112,6 +112,43 @@ def get_task(conn: sqlite3.Connection, *, task_id: str) -> TaskFull:
     ).fetchall()
     return _row_to_task_full(row, [_row_to_question(q) for q in q_rows])
 
+def claim_task(conn: sqlite3.Connection, *, actor: str, task_id: str) -> TaskFull:
+    from ..errors import AlreadyClaimed
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    if row["status"] != "open":
+        raise AlreadyClaimed(
+            f"task {task_id} status is {row['status']}",
+            task_id=task_id,
+            current_status=row["status"],
+            current_claimed_by=row["claimed_by"],
+        )
+    claimed_at = now_iso()
+    with transaction(conn):
+        cursor = conn.execute(
+            "UPDATE tasks SET status='claimed', claimed_by=?, claimed_at=?, "
+            "version=version+1 WHERE id=? AND status='open' AND version=?",
+            (actor, claimed_at, task_id, row["version"]),
+        )
+        if cursor.rowcount == 0:
+            raise AlreadyClaimed(
+                f"task {task_id} was claimed by another actor",
+                task_id=task_id,
+            )
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.claimed",
+            actor=actor,
+            payload={},
+            tags_snapshot=json.loads(row["tags"]),
+            ai_involvement_snap=row["ai_involvement"],
+            agent_autonomy_snap=row["agent_autonomy"],
+            unit_id_snap=row["unit_id"],
+        )
+    return get_task(conn, task_id=task_id)
+
 def list_open_tasks(
     conn: sqlite3.Connection,
     *,
