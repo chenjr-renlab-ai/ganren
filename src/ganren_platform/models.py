@@ -105,3 +105,11 @@ class AskQuestionRequest(BaseModel):
 class AnswerQuestionRequest(BaseModel):
     question_id: str
     answer: str = Field(..., min_length=1)
+
+class AskQuestionBody(BaseModel):
+    question: str = Field(..., min_length=1)
+    ctx_summary: Optional[str] = None
+    ctx_full: Optional[str] = None
+
+class AnswerQuestionBody(BaseModel):
+    answer: str = Field(..., min_length=1)
