@@ -1,6 +1,5 @@
-import asyncio
 from typing import Optional
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import BackgroundTasks, FastAPI, Header, Request
 from fastapi.responses import JSONResponse
 from ..db import get_connection
 from ..errors import PlatformError
@@ -34,8 +33,12 @@ def create_app(*, db_path: str, slack_webhook_url: Optional[str]) -> FastAPI:
 
     return app
 
-def schedule_slack(app: FastAPI, event_type: str, payload: dict) -> None:
-    url = app.state.slack_webhook_url
-    if not url:
+def schedule_slack(
+    background_tasks: BackgroundTasks,
+    slack_webhook_url: Optional[str],
+    event_type: str,
+    payload: dict,
+) -> None:
+    if not slack_webhook_url:
         return
-    asyncio.create_task(send_event(url, event_type, payload))
+    background_tasks.add_task(send_event, slack_webhook_url, event_type, payload)

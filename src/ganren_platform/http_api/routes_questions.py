@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from ..db import get_connection
 from ..models import (
     AskQuestionRequest, AnswerQuestionRequest,
@@ -10,7 +10,8 @@ from .app import get_actor, schedule_slack
 router = APIRouter(prefix="/v1", tags=["questions"])
 
 @router.post("/tasks/{task_id}/questions", status_code=201)
-def ask(task_id: str, body: AskQuestionBody, request: Request, actor: str = Depends(get_actor)):
+def ask(task_id: str, body: AskQuestionBody, request: Request,
+        background_tasks: BackgroundTasks, actor: str = Depends(get_actor)):
     req = AskQuestionRequest(
         task_id=task_id,
         question=body.question,
@@ -23,13 +24,18 @@ def ask(task_id: str, body: AskQuestionBody, request: Request, actor: str = Depe
         row = conn.execute("SELECT created_by FROM tasks WHERE id=?", (task_id,)).fetchone()
     finally:
         conn.close()
-    schedule_slack(request.app, "question.asked",
-                   {"task_id": task_id, "ctx_summary": req.ctx_summary,
-                    "created_by": row["created_by"]})
+    schedule_slack(
+        background_tasks,
+        request.app.state.slack_webhook_url,
+        "question.asked",
+        {"task_id": task_id, "ctx_summary": req.ctx_summary,
+         "created_by": row["created_by"]},
+    )
     return {"id": qid}
 
 @router.post("/questions/{question_id}/answer")
-def answer(question_id: str, body: AnswerQuestionBody, request: Request, actor: str = Depends(get_actor)):
+def answer(question_id: str, body: AnswerQuestionBody, request: Request,
+           background_tasks: BackgroundTasks, actor: str = Depends(get_actor)):
     req = AnswerQuestionRequest(question_id=question_id, answer=body.answer)
     conn = get_connection(request.app.state.db_path)
     try:
@@ -40,6 +46,10 @@ def answer(question_id: str, body: AnswerQuestionBody, request: Request, actor: 
         ).fetchone()
     finally:
         conn.close()
-    schedule_slack(request.app, "question.answered",
-                   {"task_id": row["task_id"], "asked_by": row["asked_by"]})
+    schedule_slack(
+        background_tasks,
+        request.app.state.slack_webhook_url,
+        "question.answered",
+        {"task_id": row["task_id"], "asked_by": row["asked_by"]},
+    )
     return {"ok": True}

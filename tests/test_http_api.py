@@ -1,5 +1,6 @@
 import pytest
 import httpx
+import respx
 from ganren_platform.http_api.app import create_app
 from ganren_platform.db import migrate, get_connection
 
@@ -15,6 +16,21 @@ def app(temp_db_path):
 @pytest.fixture
 async def client(app):
     transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+@pytest.fixture
+def app_with_slack(temp_db_path):
+    migrate(temp_db_path)
+    conn = get_connection(temp_db_path)
+    for h in ("alice", "bob", "carol"):
+        conn.execute("INSERT INTO actors (handle, display) VALUES (?, ?)", (h, h.title()))
+    conn.close()
+    return create_app(db_path=temp_db_path, slack_webhook_url="https://hooks.slack.com/test")
+
+@pytest.fixture
+async def client_with_slack(app_with_slack):
+    transport = httpx.ASGITransport(app=app_with_slack)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
@@ -98,3 +114,14 @@ async def test_e2e_publish_claim_ask_answer_submit_signoff(client):
 
     r = await client.get(f"/v1/tasks/{tid}", headers={"X-Actor": "alice"})
     assert r.json()["status"] == "closed"
+
+@respx.mock
+async def test_publish_triggers_slack_when_configured(client_with_slack):
+    route = respx.post("https://hooks.slack.com/test").mock(return_value=httpx.Response(200))
+    r = await client_with_slack.post(
+        "/v1/tasks", headers={"X-Actor": "alice"},
+        json={"title":"T","description":"D","context_summary":"S",
+              "tags":["IC"],"ai_involvement":"L2","agent_autonomy":"L3","difficulty":"routine"},
+    )
+    assert r.status_code == 201
+    assert route.called

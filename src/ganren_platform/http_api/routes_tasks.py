@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
 from ..models import (
     PublishTaskRequest, TaskFull, TaskListItem, Outcome,
@@ -38,14 +38,19 @@ class RecordOutcomeRequest(BaseModel):
     outcome: Outcome
 
 @router.post("", status_code=201)
-def publish(req: PublishTaskRequest, request: Request, actor: str = Depends(get_actor)):
+def publish(req: PublishTaskRequest, request: Request, background_tasks: BackgroundTasks,
+            actor: str = Depends(get_actor)):
     conn = get_connection(request.app.state.db_path)
     try:
         tid = task_svc.publish_task(conn, actor=actor, req=req)
     finally:
         conn.close()
-    schedule_slack(request.app, "task.created",
-                   {"task_id": tid, "title": req.title, "tags": req.tags, "created_by": actor})
+    schedule_slack(
+        background_tasks,
+        request.app.state.slack_webhook_url,
+        "task.created",
+        {"task_id": tid, "title": req.title, "tags": req.tags, "created_by": actor},
+    )
     return {"id": tid}
 
 @router.get("", response_model=list[TaskListItem])
@@ -72,50 +77,73 @@ def get_one(task_id: str, request: Request):
         conn.close()
 
 @router.post("/{task_id}/claim", response_model=TaskFull)
-def claim(task_id: str, request: Request, actor: str = Depends(get_actor)):
+def claim(task_id: str, request: Request, background_tasks: BackgroundTasks,
+          actor: str = Depends(get_actor)):
     conn = get_connection(request.app.state.db_path)
     try:
         task = task_svc.claim_task(conn, actor=actor, task_id=task_id)
     finally:
         conn.close()
-    schedule_slack(request.app, "task.claimed",
-                   {"task_id": task_id, "claimed_by": actor})
+    schedule_slack(
+        background_tasks,
+        request.app.state.slack_webhook_url,
+        "task.claimed",
+        {"task_id": task_id, "claimed_by": actor},
+    )
     return task
 
 @router.post("/{task_id}/abandon")
-def abandon(task_id: str, body: AbandonRequest, request: Request, actor: str = Depends(get_actor)):
+def abandon(task_id: str, body: AbandonRequest, request: Request,
+            background_tasks: BackgroundTasks, actor: str = Depends(get_actor)):
     conn = get_connection(request.app.state.db_path)
     try:
         task_svc.abandon_task(conn, actor=actor, task_id=task_id, reason=body.reason)
     finally:
         conn.close()
-    schedule_slack(request.app, "task.abandoned", {"task_id": task_id})
+    schedule_slack(
+        background_tasks,
+        request.app.state.slack_webhook_url,
+        "task.abandoned",
+        {"task_id": task_id},
+    )
     return {"ok": True}
 
 @router.post("/{task_id}/cancel")
-def cancel(task_id: str, body: CancelRequest, request: Request, actor: str = Depends(get_actor)):
+def cancel(task_id: str, body: CancelRequest, request: Request,
+           background_tasks: BackgroundTasks, actor: str = Depends(get_actor)):
     conn = get_connection(request.app.state.db_path)
     try:
         task_svc.cancel_task(conn, actor=actor, task_id=task_id, reason=body.reason)
     finally:
         conn.close()
-    schedule_slack(request.app, "task.cancelled", {"task_id": task_id})
+    schedule_slack(
+        background_tasks,
+        request.app.state.slack_webhook_url,
+        "task.cancelled",
+        {"task_id": task_id},
+    )
     return {"ok": True}
 
 @router.post("/{task_id}/submit")
-def submit(task_id: str, body: SubmitRequest, request: Request, actor: str = Depends(get_actor)):
+def submit(task_id: str, body: SubmitRequest, request: Request,
+           background_tasks: BackgroundTasks, actor: str = Depends(get_actor)):
     conn = get_connection(request.app.state.db_path)
     try:
         task_svc.submit_for_review(conn, actor=actor, task_id=task_id, summary=body.summary)
         row = conn.execute("SELECT created_by FROM tasks WHERE id=?", (task_id,)).fetchone()
     finally:
         conn.close()
-    schedule_slack(request.app, "task.submitted",
-                   {"task_id": task_id, "created_by": row["created_by"]})
+    schedule_slack(
+        background_tasks,
+        request.app.state.slack_webhook_url,
+        "task.submitted",
+        {"task_id": task_id, "created_by": row["created_by"]},
+    )
     return {"ok": True}
 
 @router.post("/{task_id}/reject")
-def reject(task_id: str, body: RejectRequest, request: Request, actor: str = Depends(get_actor)):
+def reject(task_id: str, body: RejectRequest, request: Request,
+           background_tasks: BackgroundTasks, actor: str = Depends(get_actor)):
     conn = get_connection(request.app.state.db_path)
     try:
         task_svc.reject_task(conn, actor=actor, task_id=task_id,
@@ -123,18 +151,28 @@ def reject(task_id: str, body: RejectRequest, request: Request, actor: str = Dep
         row = conn.execute("SELECT claimed_by FROM tasks WHERE id=?", (task_id,)).fetchone()
     finally:
         conn.close()
-    schedule_slack(request.app, "task.rejected",
-                   {"task_id": task_id, "claimed_by": row["claimed_by"], "reason": body.reason})
+    schedule_slack(
+        background_tasks,
+        request.app.state.slack_webhook_url,
+        "task.rejected",
+        {"task_id": task_id, "claimed_by": row["claimed_by"], "reason": body.reason},
+    )
     return {"ok": True}
 
 @router.post("/{task_id}/sign_off")
-def sign_off(task_id: str, body: SignOffRequest, request: Request, actor: str = Depends(get_actor)):
+def sign_off(task_id: str, body: SignOffRequest, request: Request,
+             background_tasks: BackgroundTasks, actor: str = Depends(get_actor)):
     conn = get_connection(request.app.state.db_path)
     try:
         task_svc.sign_off_task(conn, actor=actor, task_id=task_id, comment=body.comment)
     finally:
         conn.close()
-    schedule_slack(request.app, "task.signed_off", {"task_id": task_id})
+    schedule_slack(
+        background_tasks,
+        request.app.state.slack_webhook_url,
+        "task.signed_off",
+        {"task_id": task_id},
+    )
     return {"ok": True}
 
 @router.post("/{task_id}/retag")
