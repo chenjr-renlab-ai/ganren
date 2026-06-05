@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Literal, Optional
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 Tag = Literal["IC", "Builder", "Coach", "DRI"]
 AIInvolvement = Literal["L1", "L2", "L3"]
@@ -38,14 +38,6 @@ class PublishTaskRequest(BaseModel):
     artifacts: list[Artifact] = Field(default_factory=list)
     decision_record: Optional[DecisionRecord] = None
     unit_id: Optional[str] = None
-
-    @model_validator(mode="after")
-    def _require_decision_record_when_hard_or_dri(self):
-        if (self.difficulty == "hard" or "DRI" in self.tags) and self.decision_record is None:
-            raise ValueError(
-                "decision_record is required when difficulty='hard' or tags contain 'DRI'"
-            )
-        return self
 
 class TaskListItem(BaseModel):
     id: str

@@ -71,7 +71,8 @@ async def test_publish_missing_decision_record_for_hard_returns_400(client):
             "difficulty": "hard",
         },
     )
-    assert r.status_code == 422
+    assert r.status_code == 400
+    assert r.json()["code"] == "missing_decision_record"
 
 async def test_claim_already_claimed_returns_409(client):
     r = await client.post(

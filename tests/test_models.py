@@ -20,14 +20,6 @@ def test_publish_request_accepts_minimal_routine_task():
     assert req.tags == ["IC"]
     assert req.decision_record is None
 
-def test_publish_request_requires_decision_record_for_hard():
-    with pytest.raises(ValidationError, match="decision_record"):
-        PublishTaskRequest(**_base_publish_kwargs(difficulty="hard"))
-
-def test_publish_request_requires_decision_record_for_dri():
-    with pytest.raises(ValidationError, match="decision_record"):
-        PublishTaskRequest(**_base_publish_kwargs(tags=["DRI"]))
-
 def test_publish_request_accepts_hard_with_decision_record():
     dr = DecisionRecord(
         options_considered=["A", "B"],

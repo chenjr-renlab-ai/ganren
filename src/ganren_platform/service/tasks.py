@@ -71,6 +71,11 @@ def _row_to_list_item(row: sqlite3.Row) -> TaskListItem:
     )
 
 def publish_task(conn: sqlite3.Connection, *, actor: str, req: PublishTaskRequest) -> str:
+    if (req.difficulty == "hard" or "DRI" in req.tags) and req.decision_record is None:
+        from ..errors import MissingDecisionRecord
+        raise MissingDecisionRecord(
+            "decision_record is required when difficulty='hard' or tags contain 'DRI'"
+        )
     task_id = new_id()
     created_at = now_iso()
     with transaction(conn):
@@ -356,7 +361,7 @@ def retag_task(
     conn: sqlite3.Connection, *, actor: str, task_id: str,
     new_tags: list[str], reason: str,
 ) -> None:
-    from ..errors import NotAllowed, InvalidTags
+    from ..errors import NotAllowed, InvalidTags, VersionConflict
     if not new_tags:
         raise InvalidTags("new_tags must be non-empty", task_id=task_id)
     allowed_tags = {"IC", "Builder", "Coach", "DRI"}
@@ -370,10 +375,13 @@ def retag_task(
     if not (is_creator or is_coach):
         raise NotAllowed("only creator or unit coach can retag", task_id=task_id)
     with transaction(conn):
-        conn.execute(
-            "UPDATE tasks SET tags=?, tag_source='override' WHERE id=?",
-            (json.dumps(new_tags), task_id),
+        cursor = conn.execute(
+            "UPDATE tasks SET tags=?, tag_source='override', version=version+1 "
+            "WHERE id=? AND version=?",
+            (json.dumps(new_tags), task_id, row["version"]),
         )
+        if cursor.rowcount == 0:
+            raise VersionConflict("task state changed concurrently", task_id=task_id)
         insert_event(
             conn,
             task_id=task_id,
@@ -389,7 +397,7 @@ def retag_task(
 def record_outcome(
     conn: sqlite3.Connection, *, actor: str, task_id: str, outcome: Outcome,
 ) -> None:
-    from ..errors import InvalidState
+    from ..errors import InvalidState, VersionConflict
     row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     if row is None:
         raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
@@ -399,10 +407,13 @@ def record_outcome(
             task_id=task_id, current_status=row["status"],
         )
     with transaction(conn):
-        conn.execute(
-            "UPDATE tasks SET outcome=? WHERE id=?",
-            (json.dumps(outcome.model_dump()), task_id),
+        cursor = conn.execute(
+            "UPDATE tasks SET outcome=?, version=version+1 "
+            "WHERE id=? AND version=?",
+            (json.dumps(outcome.model_dump()), task_id, row["version"]),
         )
+        if cursor.rowcount == 0:
+            raise VersionConflict("task state changed concurrently", task_id=task_id)
         insert_event(
             conn,
             task_id=task_id,
@@ -418,14 +429,20 @@ def record_outcome(
 def report_escalation(
     conn: sqlite3.Connection, *, actor: str, task_id: str, note: str,
 ) -> None:
-    from ..errors import NotAllowed
+    from ..errors import NotAllowed, VersionConflict
     row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     if row is None:
         raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
     if row["claimed_by"] != actor:
         raise NotAllowed("only claimer can report escalation", task_id=task_id)
     with transaction(conn):
-        conn.execute("UPDATE tasks SET escalated=1 WHERE id=?", (task_id,))
+        cursor = conn.execute(
+            "UPDATE tasks SET escalated=1, version=version+1 "
+            "WHERE id=? AND version=?",
+            (task_id, row["version"]),
+        )
+        if cursor.rowcount == 0:
+            raise VersionConflict("task state changed concurrently", task_id=task_id)
         insert_event(
             conn,
             task_id=task_id,

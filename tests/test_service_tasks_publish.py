@@ -1,5 +1,8 @@
 import json
+import pytest
 from ganren_platform.service.tasks import publish_task, get_task
+from ganren_platform.models import PublishTaskRequest
+from ganren_platform.errors import MissingDecisionRecord
 
 def test_publish_routine_task_inserts_row_and_event(conn, routine_publish_req):
     task_id = publish_task(conn, actor="alice", req=routine_publish_req)
@@ -33,6 +36,23 @@ def test_get_task_returns_full_payload(conn, routine_publish_req):
 
 def test_get_task_raises_when_missing(conn):
     from ganren_platform.errors import TaskNotFound
-    import pytest
     with pytest.raises(TaskNotFound):
         get_task(conn, task_id="does-not-exist")
+
+def test_publish_task_requires_decision_record_for_hard(conn):
+    req = PublishTaskRequest(
+        title="T", description="D", context_summary="S",
+        tags=["IC"], ai_involvement="L2", agent_autonomy="L3", difficulty="hard",
+    )
+    with pytest.raises(MissingDecisionRecord) as excinfo:
+        publish_task(conn, actor="alice", req=req)
+    assert excinfo.value.code == "missing_decision_record"
+
+def test_publish_task_requires_decision_record_for_dri(conn):
+    req = PublishTaskRequest(
+        title="T", description="D", context_summary="S",
+        tags=["DRI"], ai_involvement="L2", agent_autonomy="L3", difficulty="routine",
+    )
+    with pytest.raises(MissingDecisionRecord) as excinfo:
+        publish_task(conn, actor="alice", req=req)
+    assert excinfo.value.code == "missing_decision_record"
