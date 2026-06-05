@@ -111,3 +111,26 @@ def get_task(conn: sqlite3.Connection, *, task_id: str) -> TaskFull:
         (task_id,),
     ).fetchall()
     return _row_to_task_full(row, [_row_to_question(q) for q in q_rows])
+
+def list_open_tasks(
+    conn: sqlite3.Connection,
+    *,
+    tags: Optional[list[str]] = None,
+    ai_involvement: Optional[str] = None,
+    difficulty: Optional[str] = None,
+) -> list[TaskListItem]:
+    sql = "SELECT * FROM tasks WHERE status='open'"
+    params: list = []
+    if ai_involvement:
+        sql += " AND ai_involvement = ?"
+        params.append(ai_involvement)
+    if difficulty:
+        sql += " AND difficulty = ?"
+        params.append(difficulty)
+    sql += " ORDER BY created_at"
+    rows = conn.execute(sql, params).fetchall()
+    items = [_row_to_list_item(r) for r in rows]
+    if tags:
+        wanted = set(tags)
+        items = [it for it in items if wanted & set(it.tags)]
+    return items
