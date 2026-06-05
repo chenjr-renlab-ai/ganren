@@ -343,3 +343,97 @@ def sign_off_task(
             agent_autonomy_snap=row["agent_autonomy"],
             unit_id_snap=row["unit_id"],
         )
+
+def _is_unit_coach(conn: sqlite3.Connection, actor: str, unit_id: Optional[str]) -> bool:
+    if not unit_id:
+        return False
+    row = conn.execute(
+        "SELECT coach_handle FROM units WHERE id=?", (unit_id,)
+    ).fetchone()
+    return row is not None and row["coach_handle"] == actor
+
+def retag_task(
+    conn: sqlite3.Connection, *, actor: str, task_id: str,
+    new_tags: list[str], reason: str,
+) -> None:
+    from ..errors import NotAllowed, InvalidTags
+    if not new_tags:
+        raise InvalidTags("new_tags must be non-empty", task_id=task_id)
+    allowed_tags = {"IC", "Builder", "Coach", "DRI"}
+    if not set(new_tags) <= allowed_tags:
+        raise InvalidTags(f"unknown tags: {set(new_tags) - allowed_tags}", task_id=task_id)
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    is_creator = row["created_by"] == actor
+    is_coach = _is_unit_coach(conn, actor, row["unit_id"])
+    if not (is_creator or is_coach):
+        raise NotAllowed("only creator or unit coach can retag", task_id=task_id)
+    with transaction(conn):
+        conn.execute(
+            "UPDATE tasks SET tags=?, tag_source='override' WHERE id=?",
+            (json.dumps(new_tags), task_id),
+        )
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.retagged",
+            actor=actor,
+            payload={"reason": reason, "old_tags": json.loads(row["tags"])},
+            tags_snapshot=new_tags,
+            ai_involvement_snap=row["ai_involvement"],
+            agent_autonomy_snap=row["agent_autonomy"],
+            unit_id_snap=row["unit_id"],
+        )
+
+def record_outcome(
+    conn: sqlite3.Connection, *, actor: str, task_id: str, outcome: Outcome,
+) -> None:
+    from ..errors import InvalidState
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    if row["status"] != "closed":
+        raise InvalidState(
+            f"cannot record outcome on status {row['status']}",
+            task_id=task_id, current_status=row["status"],
+        )
+    with transaction(conn):
+        conn.execute(
+            "UPDATE tasks SET outcome=? WHERE id=?",
+            (json.dumps(outcome.model_dump()), task_id),
+        )
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.outcome_recorded",
+            actor=actor,
+            payload=outcome.model_dump(),
+            tags_snapshot=json.loads(row["tags"]),
+            ai_involvement_snap=row["ai_involvement"],
+            agent_autonomy_snap=row["agent_autonomy"],
+            unit_id_snap=row["unit_id"],
+        )
+
+def report_escalation(
+    conn: sqlite3.Connection, *, actor: str, task_id: str, note: str,
+) -> None:
+    from ..errors import NotAllowed
+    row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if row is None:
+        raise TaskNotFound(f"task {task_id} not found", task_id=task_id)
+    if row["claimed_by"] != actor:
+        raise NotAllowed("only claimer can report escalation", task_id=task_id)
+    with transaction(conn):
+        conn.execute("UPDATE tasks SET escalated=1 WHERE id=?", (task_id,))
+        insert_event(
+            conn,
+            task_id=task_id,
+            type="task.escalated",
+            actor=actor,
+            payload={"note": note},
+            tags_snapshot=json.loads(row["tags"]),
+            ai_involvement_snap=row["ai_involvement"],
+            agent_autonomy_snap=row["agent_autonomy"],
+            unit_id_snap=row["unit_id"],
+        )
