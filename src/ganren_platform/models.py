@@ -113,3 +113,20 @@ class AskQuestionBody(BaseModel):
 
 class AnswerQuestionBody(BaseModel):
     answer: str = Field(..., min_length=1)
+
+class InboxResponse(BaseModel):
+    questions_to_answer: list[QuestionOut] = Field(default_factory=list)
+    reviews_pending: list[TaskListItem] = Field(default_factory=list)
+    answers_received: list[QuestionOut] = Field(default_factory=list)
+    rejections_to_address: list[TaskListItem] = Field(default_factory=list)
+
+class MyTasksResponse(BaseModel):
+    created: list[TaskListItem] = Field(default_factory=list)
+    claimed: list[TaskListItem] = Field(default_factory=list)
+
+class UnitHealthResponse(BaseModel):
+    unit_id: str
+    task_count: int
+    closed_count: int
+    open_count: int
+    abandoned_count: int
