@@ -13,6 +13,11 @@ import sys
 from datetime import date
 from pathlib import Path
 
+# Windows 控制台默认 cp936，强制 stdout 走 utf-8 避免中文乱码
+# 这样调用方不再需要前置 PYTHONIOENCODING=utf-8（bash）或 $env:PYTHONIOENCODING=...（PowerShell）
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 DB = Path(__file__).resolve().parent.parent / "data" / "ganren.db"
 
 

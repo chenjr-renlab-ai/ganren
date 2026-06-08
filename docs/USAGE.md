@@ -89,11 +89,7 @@ uv run python tools/add_actor.py bob   "Bob 王"
 uv run python tools/add_actor.py carol "Carol 张" squad_frontend   # 第 3 个参数 = 归属单元
 ```
 
-Windows 控制台中文乱码就在命令前加 `PYTHONIOENCODING=utf-8`：
-
-```bash
-PYTHONIOENCODING=utf-8 uv run python tools/add_actor.py alice "Alice 李"
-```
+脚本会自动把 stdout 切到 UTF-8，不管你在 Git Bash / PowerShell / cmd 里跑都不会中文乱码。
 
 如果想直接走 SQL（你装了 `sqlite3` CLI 的话）：
 
