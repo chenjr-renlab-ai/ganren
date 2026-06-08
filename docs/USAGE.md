@@ -80,13 +80,22 @@ ganren.yourdomain.com {
 
 ### A.5 把团队成员加到平台
 
-MVP 阶段成员表（`actors`）和小队表（`units`）需要手动写入。开一个 SQLite 终端：
+MVP 阶段成员表（`actors`）和小队表（`units`）需要手动写入。最简单的办法是用项目自带的脚本（**不需要装 `sqlite3` CLI**，用 Python stdlib）：
 
 ```bash
-sqlite3 ./data/ganren.db
+# 加成员
+uv run python tools/add_actor.py alice "Alice 李"
+uv run python tools/add_actor.py bob   "Bob 王"
+uv run python tools/add_actor.py carol "Carol 张" squad_frontend   # 第 3 个参数 = 归属单元
 ```
 
-然后执行（按你团队实际情况改）：
+Windows 控制台中文乱码就在命令前加 `PYTHONIOENCODING=utf-8`：
+
+```bash
+PYTHONIOENCODING=utf-8 uv run python tools/add_actor.py alice "Alice 李"
+```
+
+如果想直接走 SQL（你装了 `sqlite3` CLI 的话）：
 
 ```sql
 -- 加成员（handle 必须唯一，是 CC 调工具时用的身份标识）
@@ -101,11 +110,11 @@ INSERT INTO units (id, name, type, coach_handle, created_at) VALUES
 
 -- （可选）把成员归属到小队
 UPDATE actors SET primary_unit_id='squad_frontend' WHERE handle IN ('bob','carol');
-
-.quit
 ```
 
 > `handle` 是后面所有协作里的"身份证号"，CC 调工具时会传它。**一旦发出去给别人用就不要改**，否则历史 events 里的 actor 字段会跟当前 actors 表对不上。
+>
+> Git Bash / Windows 默认没装 `sqlite3` 命令，但项目脚本和平台运行都不依赖它（用 Python `sqlite3` 模块）。要用 CLI 自查数据，可以 `winget install SQLite.SQLite` 或下载官方 zip。
 
 ### A.6 配置 Slack（可选但强推）
 
@@ -135,7 +144,11 @@ UPDATE actors SET primary_unit_id='squad_frontend' WHERE handle IN ('bob','carol
 cp ./data/ganren.db ./backups/ganren-$(date +%Y%m%d).db
 ```
 
-WAL 模式下直接 `cp` 也是安全的（SQLite 保证 reader 一致性），但严谨做法是先 `sqlite3 ganren.db ".backup ./backups/ganren-xxx.db"`。
+WAL 模式下直接 `cp` 也是安全的（SQLite 保证 reader 一致性），但严谨做法是用 SQLite 的 `.backup`。一行 Python 即可：
+
+```bash
+uv run python -c "import sqlite3,sys; src=sqlite3.connect('./data/ganren.db'); dst=sqlite3.connect(sys.argv[1]); src.backup(dst); dst.close()" "./backups/ganren-$(date +%Y%m%d).db"
+```
 
 ---
 
@@ -358,7 +371,16 @@ CC 工具一览。前缀都是 `ganren__`（MCP namespace 自动加）。
 
 ### E.2 自查 events 表
 
-events 是平台的 single source of truth。任何疑问都可以读它：
+events 是平台的 single source of truth。任何疑问都可以读它。
+
+最简单的办法是写一行 Python（不用装 CLI）：
+
+```bash
+uv run python -c "import sqlite3; c=sqlite3.connect('./data/ganren.db'); c.row_factory=sqlite3.Row; \
+  [print(dict(r)) for r in c.execute(\"SELECT created_at,type,actor,payload FROM events WHERE actor='bob' ORDER BY created_at DESC LIMIT 20\")]"
+```
+
+如果装了 `sqlite3` CLI（Windows 下 `winget install SQLite.SQLite`）：
 
 ```bash
 sqlite3 ./data/ganren.db
@@ -411,8 +433,8 @@ uv sync --extra dev    # 拉新依赖
 把数据迁去另一台机器：
 
 ```bash
-# 旧机器
-sqlite3 ./data/ganren.db ".backup ./data/snapshot.db"
+# 旧机器（用 Python，不需要 sqlite3 CLI）
+uv run python -c "import sqlite3; src=sqlite3.connect('./data/ganren.db'); dst=sqlite3.connect('./data/snapshot.db'); src.backup(dst); dst.close(); src.close()"
 
 # 拷到新机器同样的 ./data/ 路径，启动平台，自动接管
 ```
