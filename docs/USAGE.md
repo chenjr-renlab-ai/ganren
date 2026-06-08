@@ -154,13 +154,44 @@ uv run python -c "import sqlite3,sys; src=sqlite3.connect('./data/ganren.db'); d
 
 ## §B 用户配置（每个协作者，一次性）
 
+### 🚀 最简上手：跑配置脚本
+
+管理员把这两个文件发给你（或直接告诉你仓库地址 `git clone https://github.com/chenjr-renlab-ai/ganren.git`）：
+
+- `tools/setup_client.py`
+- 平台 MCP URL（比如 `http://192.168.22.56:8787/mcp/`）
+
+然后跑：
+
+```bash
+python tools/setup_client.py
+```
+
+脚本会引导你回答 3 个问题（actor handle、显示名、平台 URL），自动：
+- 测试网络联通
+- 调 `claude mcp add` 把 ganren 加进 user-scope MCP 配置
+- 在 `~/.claude/CLAUDE.md` 追加你的 actor 身份说明
+- 输出"请管理员把我加进 actors 表"的指令给你复制粘贴
+
+跑完之后跳过 §B.2/§B.3，直接看 §B.4 试连。
+
+下面是手动配置版本（不想跑脚本时用）。
+
 ### B.1 装 Claude Code
 
 参考 [Claude Code 官方安装指引](https://docs.claude.com/claude-code)。
 
 ### B.2 配置 MCP server
 
-在项目根目录或 `~/.claude.json` 里加：
+**推荐**：用 `claude mcp add` 命令（不要手动改 `~/.claude.json`，那是个有很多其他东西的大文件）：
+
+```bash
+claude mcp add --transport http --scope user ganren http://<管理员给你的地址>:8787/mcp/
+```
+
+`--scope user` = 用户级配置，所有项目都能用。
+
+如果一定要手动改文件，加到 `~/.claude.json` 顶层 `mcpServers` 字段下：
 
 ```json
 {
