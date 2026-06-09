@@ -1,5 +1,6 @@
 from typing import Optional
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from ..db import get_connection
 from ..models import (
     PublishTaskRequest, AskQuestionRequest, AnswerQuestionRequest,
@@ -12,7 +13,16 @@ from ..service import inbox as inbox_svc
 def build_mcp(*, db_path: str) -> FastMCP:
     # streamable_http_path="/" so the mount at /mcp exposes the endpoint at /mcp/
     # (default streamable_http_path is /mcp which would expose it at /mcp/mcp)
-    mcp = FastMCP("ganren-platform", streamable_http_path="/")
+    #
+    # 关掉 DNS rebinding protection：FastMCP 默认只接受 Host=localhost/127.0.0.1，
+    # 队友通过局域网 IP 访问会被拒成 HTTP 421。本平台是内部信任环境，关掉这层。
+    mcp = FastMCP(
+        "ganren-platform",
+        streamable_http_path="/",
+        transport_security=TransportSecuritySettings(
+            enable_dns_rebinding_protection=False,
+        ),
+    )
 
     def _conn():
         return get_connection(db_path)
