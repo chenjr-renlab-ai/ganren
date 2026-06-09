@@ -2,12 +2,16 @@
 """
 ganren 客户端配置脚本 —— 队友本机跑一次。
 
-做的事：
+做的事（按顺序）：
   1. 检查 Claude Code 是否已装
-  2. 测试到 ganren 平台的网络联通
-  3. 用 `claude mcp add` 把 ganren 加入 user-scope MCP 配置
-  4. 在全局 ~/.claude/CLAUDE.md 追加一段 actor handle 说明
-  5. 给出"请管理员把我加进 actors 表"的指令
+  2. 收集 actor handle / 显示名 / 平台 URL
+  3. 联通测试（健康检查 + MCP endpoint）
+  4. 把 ganren 加进 user-scope MCP 配置
+  5. 在全局 ~/.claude/CLAUDE.md 追加 actor 身份说明
+  6. 验证 `claude mcp list` 真的看到了 ganren
+  7. 给出"请管理员把我加进 actors 表"指令 + 后续验证步骤
+
+重复跑也安全 —— 已经配过的会被检测到并跳过；可以当诊断脚本用。
 
 跨平台（Windows / macOS / Linux），纯 stdlib，无外部依赖。
 
@@ -17,6 +21,7 @@ ganren 客户端配置脚本 —— 队友本机跑一次。
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -38,20 +43,10 @@ CLAUDE_MD_SECTION = """
 
 
 # ─── ui helpers ───
-def info(s: str) -> None:
-    print(s)
-
-
-def ok(s: str) -> None:
-    print(f"  ✓ {s}")
-
-
-def warn(s: str) -> None:
-    print(f"  ⚠ {s}")
-
-
-def err(s: str) -> None:
-    print(f"  ✗ {s}", file=sys.stderr)
+def info(s: str) -> None: print(s)
+def ok(s: str) -> None: print(f"  ✓ {s}")
+def warn(s: str) -> None: print(f"  ⚠ {s}")
+def err(s: str) -> None: print(f"  ✗ {s}", file=sys.stderr)
 
 
 def ask(prompt: str, default: str = "") -> str:
@@ -84,32 +79,86 @@ def health_url_from_mcp(mcp_url: str) -> str:
     return base + "/healthz"
 
 
-def test_connection(mcp_url: str) -> bool:
-    health = health_url_from_mcp(mcp_url)
-    info(f"\n  GET {health}")
+def _opener_no_proxy():
+    """显式不走系统代理 —— V2Ray/Clash 等本地代理常拦局域网请求"""
+    return urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def test_healthz(mcp_url: str) -> bool:
+    """探一下 /healthz 看 server 是否活着"""
+    url = health_url_from_mcp(mcp_url)
+    info(f"\n  GET {url}")
     try:
-        # 显式不走系统代理（很多人开 V2Ray/Clash，会把局域网请求转去代理）
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        with opener.open(health, timeout=5) as r:
+        with _opener_no_proxy().open(url, timeout=5) as r:
             body = r.read().decode("utf-8", errors="replace").strip()
             if r.status == 200 and '"ok"' in body:
-                ok(f"平台回应：{body}")
+                ok(f"healthz: {body}")
                 return True
-            warn(f"非预期回应：HTTP {r.status} {body}")
+            warn(f"healthz 非预期回应：HTTP {r.status} {body}")
             return False
     except urllib.error.URLError as e:
-        err(f"联通失败：{e}")
-        info("\n  常见原因：")
-        info("    1. URL 拼错（末尾应是 /mcp/）")
-        info("    2. 管理员的 server 没启动")
-        info("    3. 你跟 server 不在同一局域网 / VPN")
-        info("    4. 管理员机器防火墙没放行 8787")
-        info("    5. 你装了 V2Ray/Clash 等代理软件，把局域网 IP 也拦了")
-        info("       → 把目标 IP 加进代理的「直连」名单")
+        err(f"healthz 联通失败：{e}")
         return False
     except Exception as e:
-        err(f"未预期错误：{e}")
+        err(f"healthz 未预期错误：{e}")
         return False
+
+
+def test_mcp_endpoint(mcp_url: str) -> bool:
+    """探一下 /mcp/ 本身 —— 捕获 DNS rebinding (HTTP 421) 这类 server 端配置问题"""
+    info(f"\n  POST {mcp_url} (MCP initialize)")
+    payload = json.dumps({
+        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "ganren-setup", "version": "1.0"},
+        },
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        mcp_url, data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+        method="POST",
+    )
+    try:
+        with _opener_no_proxy().open(req, timeout=5) as r:
+            ok(f"MCP endpoint 返回 HTTP {r.status}")
+            return True
+    except urllib.error.HTTPError as e:
+        # MCP 协议层面可能返回 4xx，但只要不是 421（DNS rebinding 拦截）就 OK
+        if e.code == 421:
+            err(f"HTTP 421 Misdirected Request")
+            info("    → 管理员的 server 版本太老，开了 DNS rebinding 保护拦了局域网 IP")
+            info("    → 让管理员拉最新代码（commit eaeb2f5 起已修）+ 重启 server")
+            return False
+        ok(f"MCP endpoint 返回 HTTP {e.code}（不是 421，证明 server 能接局域网请求）")
+        return True
+    except urllib.error.URLError as e:
+        err(f"MCP endpoint 联通失败：{e}")
+        return False
+    except Exception as e:
+        err(f"MCP endpoint 未预期错误：{e}")
+        return False
+
+
+def diagnose_failure(mcp_url: str) -> None:
+    """联通失败时列可能原因"""
+    info("\n  常见原因排查（按可能性排序）：")
+    info("    1. URL 拼错（末尾应是 /mcp/，注意斜杠）")
+    info("    2. 你和 server 不在同一局域网 / VPN")
+    info("    3. 管理员的 server 没启动 / 已关机")
+    info("    4. 管理员机器 Windows 防火墙没放行 8787")
+    info("    5. 你装了 V2Ray/Clash 等代理软件，拦了局域网请求")
+    # 检测当前 shell 是否有代理环境变量
+    proxy_envs = [v for v in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY")
+                  if os.environ.get(v)]
+    if proxy_envs:
+        warn(f"    检测到代理变量：{', '.join(proxy_envs)}")
+        info("    → 临时绕过：把目标 IP 加进代理软件的「直连」名单")
+        info("       或开新 shell 跑：unset http_proxy https_proxy && python setup_client.py")
 
 
 # ─── steps ───
@@ -134,14 +183,37 @@ def step_mcp_add(claude_cli: str, mcp_url: str) -> bool:
 
     msg = (errout or out).lower()
     if "already exists" in msg or "already configured" in msg:
-        warn("ganren 已存在 user-scope MCP 配置")
-        info("  如需变更 URL，手动跑：")
-        info(f"    claude mcp remove ganren -s user")
-        info("  再重跑此脚本。")
+        ok("ganren 已在 user-scope MCP 配置里（跳过）")
         return True
 
     err(f"claude mcp add 失败：{errout or out}")
+    info("\n  如果你想改 URL，先删了再重跑此脚本：")
+    info("    claude mcp remove ganren -s user")
     return False
+
+
+def step_verify_mcp_list(claude_cli: str, expected_url: str) -> bool:
+    """跑 claude mcp list 看 ganren 真的在里面 + URL 匹配"""
+    info(f"\n  $ {claude_cli} mcp list")
+    try:
+        r = subprocess.run([claude_cli, "mcp", "list"], capture_output=True, text=True, timeout=10)
+    except Exception as e:
+        warn(f"调用 claude mcp list 失败：{e}（不致命，继续）")
+        return True
+    out = r.stdout or ""
+    if "ganren" not in out.lower():
+        err("claude mcp list 输出里看不到 ganren —— 配置可能没生效")
+        return False
+    if expected_url.rstrip("/") in out:
+        ok(f"已确认 ganren 在 MCP servers 列表里，URL 匹配")
+    else:
+        warn(f"ganren 在列表里，但 URL 看起来跟你刚填的不一样")
+        info("  list 输出：")
+        for line in out.splitlines():
+            if "ganren" in line.lower():
+                info(f"    {line}")
+        info(f"  你填的：{expected_url}")
+    return True
 
 
 def step_claude_md(handle: str) -> bool:
@@ -154,9 +226,8 @@ def step_claude_md(handle: str) -> bool:
             err(f"读 CLAUDE.md 失败：{e}")
             return False
         if CLAUDE_MD_MARKER in existing:
-            ok("已有 ganren 配置 section，跳过（如需修改请手动编辑此文件）")
+            ok("已有 ganren 配置 section，跳过（要改 handle 请手动编辑此文件）")
             return True
-        # 备份
         backup = CLAUDE_MD.with_name(
             f"CLAUDE.md.bak.{datetime.now().strftime('%Y%m%d%H%M%S')}"
         )
@@ -177,29 +248,53 @@ def step_claude_md(handle: str) -> bool:
         return False
 
 
+def in_ganren_repo() -> bool:
+    """检测当前 cwd 是否在 ganren 仓库里 —— 队友在仓库里启 CC 会让 CC 误以为要本地部署"""
+    cwd = Path.cwd()
+    return (cwd / "src" / "ganren_platform" / "main.py").exists()
+
+
 def finish_message(handle: str, display: str) -> None:
     print()
     print("=" * 60)
     print(" 配置完成 🎉")
     print("=" * 60)
     print()
-    print(" 还差一步 —— 让平台管理员把你加进 actors 表。")
-    print(" 把下面这条消息发给管理员（任何 IM 都行）：")
+    print(" 接下来 3 步：")
+    print()
+    print(" ─── 步骤 1：让管理员把你加进 actors 表 ───")
+    print()
+    print("  把下面这条消息发给管理员（任何 IM 都行）：")
     print()
     print(" ┌" + "─" * 56 + "┐")
-    print(f" │  请把我加进 ganren 平台 actors 表，在仓库根目录跑： │")
+    print(f" │ 请把我加进 ganren actors 表，在仓库根目录跑：           │")
     print(" │                                                        │")
-    print(f' │  uv run python tools/add_actor.py {handle!r} "{display}"'.ljust(57) + "│")
+    print(f' │ uv run python tools/add_actor.py {handle!r} "{display}"'.ljust(57) + "│")
     print(" └" + "─" * 56 + "┘")
     print()
-    print(" 管理员跑完后：")
+    print(" ─── 步骤 2：在「不是 ganren 仓库」的目录启 CC ───")
     print()
-    print("   1. 重启你的 Claude Code（让它重读 MCP 配置）")
-    print("   2. 跟 CC 说：「看下我在 ganren 上的 inbox」")
-    print("   3. 第一次会弹工具权限提示，确认即可")
-    print("   4. 返回空 inbox = 全通了")
+    print("  ⚠ 这一点很关键：如果你在 ganren 仓库目录里启动 Claude Code，")
+    print("    CC 会看到周围的源码，误以为是要本地部署，不去调远程 MCP。")
     print()
-    print(" 之后日常对话脚本看：")
+    print("  正确做法：")
+    print("    cd ~            # 或你自己的项目目录")
+    print("    claude          # 启动 Claude Code")
+    print()
+    print(" ─── 步骤 3：在 CC 里明确说「用 ganren 工具」───")
+    print()
+    print("  跟 CC 说：")
+    print()
+    print(f"    用 ganren MCP 工具看下我的 inbox（actor 用 {handle}）")
+    print()
+    print("  「ganren MCP 工具」几个字很关键 —— 强化意图，防止 CC 瞎猜。")
+    print("  第一次会弹工具权限确认，选「允许」。")
+    print("  返回空 inbox（所有列表都是 []）= 全通了。")
+    print()
+    print(" ─── 出问题再跑一次这个脚本 ───")
+    print()
+    print(" 已配过的话脚本会跳过写入，只跑联通测试和验证 —— 可以当诊断器用。")
+    print(" 完整手册：")
     print(" https://github.com/chenjr-renlab-ai/ganren/blob/main/docs/USAGE.md")
     print()
 
@@ -208,10 +303,8 @@ def finish_message(handle: str, display: str) -> None:
 def main() -> int:
     banner("ganren 客户端配置")
     info(
-        "\n 这个脚本会引导你完成 3 件事："
-        "\n   1. 测试到 ganren 平台的网络联通"
-        "\n   2. 把 ganren 加进 Claude Code 的 user-scope MCP 配置"
-        "\n   3. 在全局 CLAUDE.md 登记你的 actor handle"
+        "\n 这个脚本会引导你完成连入 ganren 平台的全部配置 + 诊断。"
+        "\n 已经配过的部分会被检测到并跳过 —— 重跑也安全。"
     )
 
     # 第 0 步：检查 claude CLI
@@ -219,11 +312,14 @@ def main() -> int:
     claude_cli = find_claude_cli()
     if not claude_cli:
         err("找不到 `claude` 命令")
-        info("\n  你需要先装 Claude Code（这个工具是基于 CC 的 MCP 协议工作的）")
+        info("\n  你需要先装 Claude Code（这个工具基于 CC 的 MCP 协议工作）")
         info("  装完后重跑此脚本。")
         info("  https://docs.claude.com/claude-code")
         return 1
-    ok(f"Claude Code CLI 位置：{claude_cli}")
+    ok(f"Claude Code CLI：{claude_cli}")
+    if in_ganren_repo():
+        warn("检测到你正在 ganren 仓库目录里跑这个脚本 —— 这没问题，")
+        warn("但 setup 完成后启动 CC 时要 cd 出去（详见结尾的步骤 2）")
 
     # 第 1 步：收集输入
     banner("第 1 步 · 基本信息")
@@ -248,24 +344,31 @@ def main() -> int:
         print("\n  已取消")
         return 1
 
-    # 第 2 步：测试联通
+    # 第 2 步：联通测试（双探针：healthz + MCP endpoint）
     banner("第 2 步 · 联通测试")
-    if not test_connection(url):
+    healthz_ok = test_healthz(url)
+    mcp_ok = test_mcp_endpoint(url) if healthz_ok else False
+    if not (healthz_ok and mcp_ok):
+        diagnose_failure(url)
         cont = ask("\n  联通失败。仍要继续写本地配置吗？（y/N）", default="N")
         if cont.lower() != "y":
-            info("\n  已退出。请先排错，然后重跑此脚本。")
+            info("\n  已退出。请先排错（或让管理员排），然后重跑此脚本。")
             return 1
         warn("强制继续（但 CC 实际调工具时会失败）")
 
-    # 第 3 步：claude mcp add
+    # 第 3 步：注册 MCP server
     banner("第 3 步 · 注册 MCP server")
     if not step_mcp_add(claude_cli, url):
         return 1
 
-    # 第 4 步：CLAUDE.md
+    # 第 4 步：登记 actor 身份
     banner("第 4 步 · 登记 actor 身份")
     if not step_claude_md(handle):
         return 1
+
+    # 第 5 步：验证 MCP list 真的看到 ganren
+    banner("第 5 步 · 验证 MCP 配置生效")
+    step_verify_mcp_list(claude_cli, url)
 
     finish_message(handle, display)
     return 0
