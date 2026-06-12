@@ -51,6 +51,17 @@ def publish(req: PublishTaskRequest, request: Request, background_tasks: Backgro
         "task.created",
         {"task_id": tid, "title": req.title, "tags": req.tags, "created_by": actor},
     )
+    # V2 #4 · publish 完成后追加一条池快照消息
+    from ..config import load_config
+    _cfg = load_config()
+    if _cfg.publish_includes_snapshot:
+        snapshot_webhook = _cfg.slack_digest_webhook or request.app.state.slack_webhook_url
+        # 用一个独立 conn 拿快照，因为前面的已经 close 了
+        background_tasks.add_task(
+            _push_publish_snapshot_bg,
+            request.app.state.db_path,
+            snapshot_webhook,
+        )
     return {"id": tid}
 
 @router.get("", response_model=list[TaskListItem])
@@ -204,3 +215,12 @@ def escalate(task_id: str, body: EscalateRequest, request: Request,
     finally:
         conn.close()
     return {"ok": True}
+
+
+async def _push_publish_snapshot_bg(db_path: str, webhook_url: Optional[str]):
+    from ..notifications.digest import push_publish_snapshot
+    conn = get_connection(db_path)
+    try:
+        await push_publish_snapshot(conn, webhook_url=webhook_url, enabled=True)
+    finally:
+        conn.close()
