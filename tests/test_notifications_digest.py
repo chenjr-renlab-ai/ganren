@@ -101,3 +101,67 @@ def test_count_events_in_window(tmp_path):
         "question.asked": 0,
         "question.answered": 0,
     }
+
+
+def test_render_pool_snapshot_empty(tmp_path):
+    from ganren_platform.notifications.digest import render_pool_snapshot
+    from ganren_platform.db import get_connection, migrate
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    now = datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc)
+    out = render_pool_snapshot(conn, now=now, max_rows=50)
+    assert "0 条 active" in out
+
+def test_render_pool_snapshot_shows_all_buckets(tmp_path):
+    from ganren_platform.notifications.digest import render_pool_snapshot
+    from ganren_platform.db import get_connection, migrate
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    base = "2026-06-10T08:00:00+00:00"
+    # 1 open，1 claimed，1 awaiting_review
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, context_summary, tags, "
+        "ai_involvement, agent_autonomy, difficulty, status, created_by, created_at) "
+        "VALUES ('t_open','open 任务','D','S','[\"IC\"]','L2','L3','routine','open','alice',?)",
+        (base,),
+    )
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, context_summary, tags, "
+        "ai_involvement, agent_autonomy, difficulty, status, created_by, "
+        "claimed_by, claimed_at, created_at) "
+        "VALUES ('t_clm','在干任务','D','S','[\"Builder\"]','L2','L3','routine','claimed','alice','bob',?,?)",
+        (base, base),
+    )
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, context_summary, tags, "
+        "ai_involvement, agent_autonomy, difficulty, status, created_by, "
+        "claimed_by, claimed_at, submitted_at, created_at) "
+        "VALUES ('t_rev','待 review','D','S','[\"IC\"]','L2','L3','routine','awaiting_review','alice','bob',?,?,?)",
+        (base, base, base),
+    )
+    now = datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc)
+    out = render_pool_snapshot(conn, now=now, max_rows=50)
+    assert "3 条 active" in out
+    assert "open" in out and "在干任务" in out and "待 review" in out
+    assert "bob" in out
+
+def test_render_pool_snapshot_caps_at_max_rows(tmp_path):
+    from ganren_platform.notifications.digest import render_pool_snapshot
+    from ganren_platform.db import get_connection, migrate
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    base = "2026-06-10T08:00:00+00:00"
+    for i in range(60):
+        conn.execute(
+            "INSERT INTO tasks (id, title, description, context_summary, tags, "
+            "ai_involvement, agent_autonomy, difficulty, status, created_by, created_at) "
+            "VALUES (?, ?, 'D','S','[\"IC\"]','L2','L3','routine','open','alice',?)",
+            (f"t_{i:03d}", f"task {i}", base),
+        )
+    now = datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc)
+    out = render_pool_snapshot(conn, now=now, max_rows=50)
+    assert "60 条 active" in out  # 真实数
+    assert "还有 10 条" in out      # 省略提示

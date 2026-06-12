@@ -76,3 +76,83 @@ def count_events_in_window(
     for r in rows:
         counts[r["type"]] = r["c"]
     return counts
+
+
+STATUS_LABEL = {
+    "open": "🟢 open",
+    "claimed": "🟡 claimed",
+    "awaiting_review": "🔵 review",
+}
+
+
+def _short_id(task_id: str) -> str:
+    """ULID 后 6 字符 + 前缀 '#t_'。"""
+    return f"#t_{task_id[-6:]}"
+
+
+def _truncate(s: str, width: int) -> str:
+    if len(s) <= width:
+        return s
+    return s[: width - 3] + "..."
+
+
+def _format_actor(row: sqlite3.Row) -> str:
+    if row["status"] == "open":
+        return "-"
+    if row["status"] == "claimed":
+        return row["claimed_by"] or "-"
+    # awaiting_review
+    return f"{row['created_by']} 等"
+
+
+def render_pool_snapshot(
+    conn: sqlite3.Connection,
+    *,
+    now: datetime,
+    max_rows: int = 50,
+) -> str:
+    """渲染未关闭任务等宽表格。
+
+    输出包含一行 "当前任务池（共 N 条 active）："，
+    然后 ``` 围栏的等宽表格。
+    超过 max_rows 时尾部追加 "... 还有 X 条（open A · claimed B · review C）"。
+    """
+    total = conn.execute(
+        "SELECT COUNT(*) FROM tasks WHERE status IN ('open','claimed','awaiting_review')"
+    ).fetchone()[0]
+    rows = conn.execute(
+        "SELECT * FROM tasks WHERE status IN ('open','claimed','awaiting_review') "
+        "ORDER BY CASE status WHEN 'open' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, "
+        "created_at DESC LIMIT ?",
+        (max_rows,),
+    ).fetchall()
+
+    header_line = f"当前任务池（共 {total} 条 active）："
+    out_lines = [header_line, "```"]
+    out_lines.append(
+        f"{'状态':<10}{'ID':<11}{'标题':<33}{'负责人':<11}{'停留':<6}"
+    )
+    out_lines.append("─" * 70)
+    for r in rows:
+        out_lines.append(
+            f"{STATUS_LABEL[r['status']]:<10}"
+            f"{_short_id(r['id']):<11}"
+            f"{_truncate(r['title'], 32):<33}"
+            f"{_truncate(_format_actor(r), 10):<11}"
+            f"{state_dwell(r, now):<6}"
+        )
+
+    if total > max_rows:
+        bucket_counts = conn.execute(
+            "SELECT status, COUNT(*) c FROM tasks "
+            "WHERE status IN ('open','claimed','awaiting_review') GROUP BY status"
+        ).fetchall()
+        bucket_map = {r["status"]: r["c"] for r in bucket_counts}
+        remain = total - max_rows
+        out_lines.append(
+            f"... 还有 {remain} 条（open {bucket_map.get('open', 0)} · "
+            f"claimed {bucket_map.get('claimed', 0)} · "
+            f"review {bucket_map.get('awaiting_review', 0)}）"
+        )
+    out_lines.append("```")
+    return "\n".join(out_lines)
