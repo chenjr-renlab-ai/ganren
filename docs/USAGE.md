@@ -131,6 +131,28 @@ UPDATE actors SET primary_unit_id='squad_frontend' WHERE handle IN ('bob','carol
 🎉 CLOSE #t_01 关闭
 ```
 
+### A.6.1 V2 · 定时日报与池快照
+
+平台内置 scheduler，工作日早 10:00 + 晚 18:00 自动推送日报；新任务发布时附加任务池快照。
+
+`.env` 新增字段（详见 `.env.example`）：
+
+```dotenv
+SCHEDULER_ENABLED=true               # 平台启动时是否启 scheduler
+SCHEDULER_TZ=Asia/Shanghai
+MORNING_DIGEST_CRON=0 10 * * MON-FRI
+EVENING_DIGEST_CRON=0 18 * * MON-FRI
+SLACK_DIGEST_WEBHOOK=                # 留空则复用 SLACK_WEBHOOK_URL
+PUBLISH_INCLUDES_SNAPSHOT=true       # publish 时是否附池快照
+SNAPSHOT_MAX=50                      # 池快照单条上限
+```
+
+特性：
+- 日报格式：等宽表格，emoji 状态标签，列含 ID/标题/负责人/停留时长
+- 节流：模块级 60s 窗口防止短时间重复推送
+- fail-safe：scheduler 故障不阻塞 web server
+- 关掉：`SCHEDULER_ENABLED=false`
+
 ### A.7 备份
 
 数据只在 `./data/ganren.db` 一个文件。备份就是定时 `cp`：

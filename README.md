@@ -46,3 +46,9 @@ uv run pytest -v
 
 - Spec：`docs/superpowers/specs/2026-06-05-ganren-collab-platform-design.md`
 - Plan：`docs/superpowers/plans/2026-06-05-ganren-collab-platform.md`
+
+## V2 已落
+
+详见 [`docs/V2_BACKLOG.md`](docs/V2_BACKLOG.md)。第一波已实施：
+
+- **#4 定时 Slack 日报 + 池快照** · [设计](docs/superpowers/specs/2026-06-10-scheduled-slack-digest-design.md) · [实施计划](docs/superpowers/plans/2026-06-10-scheduled-slack-digest.md)
