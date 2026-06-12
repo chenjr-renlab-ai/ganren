@@ -13,6 +13,7 @@ _TEMPLATES: dict[str, str] = {
     "question.answered":"💬 A @{asked_by} #{task_id} 已回复",
 }
 
+
 def format_event(event_type: str, payload: dict) -> Optional[str]:
     template = _TEMPLATES.get(event_type)
     if template is None:
@@ -29,15 +30,10 @@ def format_event(event_type: str, payload: dict) -> Optional[str]:
     }
     return template.format(**safe)
 
-async def send_event(
-    webhook_url: Optional[str],
-    event_type: str,
-    payload: dict,
-) -> bool:
+
+async def post_text(webhook_url: Optional[str], text: str) -> bool:
+    """通用 Slack 推送：直接发任意预格式化文本到 webhook。"""
     if not webhook_url:
-        return False
-    text = format_event(event_type, payload)
-    if text is None:
         return False
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -45,3 +41,14 @@ async def send_event(
             return resp.status_code < 400
     except Exception:
         return False
+
+
+async def send_event(
+    webhook_url: Optional[str],
+    event_type: str,
+    payload: dict,
+) -> bool:
+    text = format_event(event_type, payload)
+    if text is None:
+        return False
+    return await post_text(webhook_url, text)

@@ -51,3 +51,24 @@ async def test_send_event_returns_false_on_http_error():
 async def test_send_event_returns_false_without_webhook():
     ok = await send_event(None, "task.created", {"task_id": "t1"})
     assert ok is False
+
+@respx.mock
+async def test_post_text_posts_when_url_provided():
+    from ganren_platform.notifications.slack import post_text
+    route = respx.post("https://hooks.slack.com/x").mock(return_value=httpx.Response(200))
+    ok = await post_text("https://hooks.slack.com/x", "hello world")
+    assert ok is True
+    assert route.called
+    assert route.calls[0].request.content == b'{"text":"hello world"}'
+
+async def test_post_text_returns_false_without_url():
+    from ganren_platform.notifications.slack import post_text
+    ok = await post_text(None, "hello")
+    assert ok is False
+
+@respx.mock
+async def test_post_text_returns_false_on_http_error():
+    from ganren_platform.notifications.slack import post_text
+    respx.post("https://hooks.slack.com/x").mock(return_value=httpx.Response(500))
+    ok = await post_text("https://hooks.slack.com/x", "hello")
+    assert ok is False
