@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 
 def state_dwell(row: sqlite3.Row, now: datetime) -> str:
@@ -35,3 +35,15 @@ def state_dwell(row: sqlite3.Row, now: datetime) -> str:
     if delta.days >= 1:
         return f"{delta.days}d"
     return f"{int(delta.total_seconds() / 3600)}h"
+
+
+def previous_workday(today: date) -> date:
+    """周一 → 上周五；周二-周五 → 昨天。
+
+    cron 限定 MON-FRI 触发，所以 today 总是工作日。
+    节假日不特殊处理：如果上一个日历日是节假日（无活动），
+    日报里"上一个工作日摘要"会全是 0，这是可接受的。
+    """
+    if today.weekday() == 0:
+        return today - timedelta(days=3)
+    return today - timedelta(days=1)

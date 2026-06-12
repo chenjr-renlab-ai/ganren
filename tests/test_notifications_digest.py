@@ -1,4 +1,4 @@
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 import sqlite3
 import pytest
 
@@ -44,3 +44,21 @@ def test_state_dwell_awaiting_review_uses_submitted_at():
         "created_at": "x", "claimed_at": "y", "submitted_at": anchor,
     })
     assert state_dwell(row, now) == "2h"
+
+
+def test_previous_workday_tuesday_returns_monday():
+    from ganren_platform.notifications.digest import previous_workday
+    # 2026-06-09 是周二
+    assert previous_workday(date(2026, 6, 9)) == date(2026, 6, 8)
+
+
+def test_previous_workday_friday_returns_thursday():
+    from ganren_platform.notifications.digest import previous_workday
+    # 2026-06-12 是周五
+    assert previous_workday(date(2026, 6, 12)) == date(2026, 6, 11)
+
+
+def test_previous_workday_monday_returns_previous_friday():
+    from ganren_platform.notifications.digest import previous_workday
+    # 2026-06-15 是周一
+    assert previous_workday(date(2026, 6, 15)) == date(2026, 6, 12)
