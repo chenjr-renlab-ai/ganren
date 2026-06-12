@@ -165,3 +165,34 @@ def test_render_pool_snapshot_caps_at_max_rows(tmp_path):
     out = render_pool_snapshot(conn, now=now, max_rows=50)
     assert "60 条 active" in out  # 真实数
     assert "还有 10 条" in out      # 省略提示
+
+
+def test_render_morning_digest_contains_window_and_pool(tmp_path):
+    from ganren_platform.notifications.digest import render_morning_digest
+    from ganren_platform.db import get_connection, migrate
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, context_summary, tags, "
+        "ai_involvement, agent_autonomy, difficulty, status, created_by, created_at) "
+        "VALUES ('t1','T','D','S','[\"IC\"]','L2','L3','routine','open','alice','2026-06-09T10:00:00+00:00')"
+    )
+    out = render_morning_digest(conn, today=date(2026, 6, 10))
+    assert "🌅" in out
+    assert "ganren 日报" in out
+    assert "2026-06-10" in out
+    assert "2026-06-09" in out  # 前一个工作日
+    assert "1 条 active" in out
+
+
+def test_render_evening_digest_contains_today_window(tmp_path):
+    from ganren_platform.notifications.digest import render_evening_digest
+    from ganren_platform.db import get_connection, migrate
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    out = render_evening_digest(conn, today=date(2026, 6, 10))
+    assert "🌆" in out
+    assert "晚 18:00" in out
+    assert "今日（00:00 至 18:00）" in out

@@ -156,3 +156,50 @@ def render_pool_snapshot(
         )
     out_lines.append("```")
     return "\n".join(out_lines)
+
+
+def _format_summary(counts: dict[str, int]) -> str:
+    return (
+        "```\n"
+        f"📌 发布  🙋 认领  🎉 关闭  ↩ 打回  ❓ 提问  💬 回答\n"
+        f"  {counts['task.created']:^5}  "
+        f"{counts['task.claimed']:^5}  "
+        f"{counts['task.signed_off']:^5}  "
+        f"{counts['task.rejected']:^5}  "
+        f"{counts['question.asked']:^5}  "
+        f"{counts['question.answered']:^5}\n"
+        "```"
+    )
+
+
+def render_morning_digest(conn: sqlite3.Connection, *, today: date) -> str:
+    yday = previous_workday(today)
+    start = datetime(yday.year, yday.month, yday.day, 0, 0, 0, tzinfo=timezone.utc).isoformat()
+    end = datetime(yday.year, yday.month, yday.day, 23, 59, 59, tzinfo=timezone.utc).isoformat()
+    counts = count_events_in_window(conn, start_iso=start, end_iso=end)
+
+    now = datetime.now(timezone.utc)
+    pool = render_pool_snapshot(conn, now=now, max_rows=50)
+
+    return (
+        f"🌅 ganren 日报 · {today.isoformat()} 早 10:00\n"
+        f"上一个工作日（{yday.isoformat()}）摘要：\n"
+        f"{_format_summary(counts)}\n"
+        f"{pool}"
+    )
+
+
+def render_evening_digest(conn: sqlite3.Connection, *, today: date) -> str:
+    start = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=timezone.utc).isoformat()
+    end = datetime.now(timezone.utc).isoformat()
+    counts = count_events_in_window(conn, start_iso=start, end_iso=end)
+
+    now = datetime.now(timezone.utc)
+    pool = render_pool_snapshot(conn, now=now, max_rows=50)
+
+    return (
+        f"🌆 ganren 日报 · {today.isoformat()} 晚 18:00\n"
+        f"今日（00:00 至 18:00）摘要：\n"
+        f"{_format_summary(counts)}\n"
+        f"{pool}"
+    )
