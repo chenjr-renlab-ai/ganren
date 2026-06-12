@@ -203,3 +203,21 @@ def render_evening_digest(conn: sqlite3.Connection, *, today: date) -> str:
         f"{_format_summary(counts)}\n"
         f"{pool}"
     )
+
+
+_last_push: dict[str, float] = {}
+_THROTTLE_SECONDS = 60
+
+
+def should_push(kind: str) -> bool:
+    """模块级节流：同 kind 在 _THROTTLE_SECONDS 内不重复推。
+
+    kind 取值：'morning_digest' / 'evening_digest' / 'publish_snapshot'。
+    实时事件推送（slack.send_event）不走节流。
+    """
+    now = time.time()
+    last = _last_push.get(kind, 0)
+    if now - last < _THROTTLE_SECONDS:
+        return False
+    _last_push[kind] = now
+    return True

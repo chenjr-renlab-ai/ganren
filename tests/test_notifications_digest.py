@@ -196,3 +196,36 @@ def test_render_evening_digest_contains_today_window(tmp_path):
     assert "🌆" in out
     assert "晚 18:00" in out
     assert "今日（00:00 至 18:00）" in out
+
+
+def test_should_push_first_call_returns_true(monkeypatch):
+    from ganren_platform.notifications import digest
+    digest._last_push.clear()
+    monkeypatch.setattr(digest.time, "time", lambda: 1000.0)
+    assert digest.should_push("kind_a") is True
+
+
+def test_should_push_within_window_returns_false(monkeypatch):
+    from ganren_platform.notifications import digest
+    digest._last_push.clear()
+    monkeypatch.setattr(digest.time, "time", lambda: 1000.0)
+    digest.should_push("k")
+    monkeypatch.setattr(digest.time, "time", lambda: 1030.0)
+    assert digest.should_push("k") is False
+
+
+def test_should_push_after_window_returns_true(monkeypatch):
+    from ganren_platform.notifications import digest
+    digest._last_push.clear()
+    monkeypatch.setattr(digest.time, "time", lambda: 1000.0)
+    digest.should_push("k")
+    monkeypatch.setattr(digest.time, "time", lambda: 1070.0)
+    assert digest.should_push("k") is True
+
+
+def test_should_push_different_kinds_independent(monkeypatch):
+    from ganren_platform.notifications import digest
+    digest._last_push.clear()
+    monkeypatch.setattr(digest.time, "time", lambda: 1000.0)
+    digest.should_push("k1")
+    assert digest.should_push("k2") is True
