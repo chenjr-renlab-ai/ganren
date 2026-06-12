@@ -61,6 +61,7 @@ def publish(req: PublishTaskRequest, request: Request, background_tasks: Backgro
             _push_publish_snapshot_bg,
             request.app.state.db_path,
             snapshot_webhook,
+            _cfg.snapshot_max,
         )
     return {"id": tid}
 
@@ -217,10 +218,12 @@ def escalate(task_id: str, body: EscalateRequest, request: Request,
     return {"ok": True}
 
 
-async def _push_publish_snapshot_bg(db_path: str, webhook_url: Optional[str]):
+async def _push_publish_snapshot_bg(db_path: str, webhook_url: Optional[str], max_rows: int):
     from ..notifications.digest import push_publish_snapshot
     conn = get_connection(db_path)
     try:
-        await push_publish_snapshot(conn, webhook_url=webhook_url, enabled=True)
+        await push_publish_snapshot(
+            conn, webhook_url=webhook_url, enabled=True, max_rows=max_rows
+        )
     finally:
         conn.close()

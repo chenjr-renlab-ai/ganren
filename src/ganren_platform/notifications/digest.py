@@ -13,6 +13,7 @@ from __future__ import annotations
 import sqlite3
 import time
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from .slack import post_text
 
@@ -174,14 +175,23 @@ def _format_summary(counts: dict[str, int]) -> str:
     )
 
 
-def render_morning_digest(conn: sqlite3.Connection, *, today: date) -> str:
+def render_morning_digest(
+    conn: sqlite3.Connection,
+    *,
+    today: date,
+    max_rows: int = 50,
+    tz: str = "UTC",
+) -> str:
     yday = previous_workday(today)
-    start = datetime(yday.year, yday.month, yday.day, 0, 0, 0, tzinfo=timezone.utc).isoformat()
-    end = datetime(yday.year, yday.month, yday.day, 23, 59, 59, tzinfo=timezone.utc).isoformat()
+    zone = ZoneInfo(tz)
+    start_local = datetime(yday.year, yday.month, yday.day, 0, 0, 0, tzinfo=zone)
+    end_local = datetime(yday.year, yday.month, yday.day, 23, 59, 59, tzinfo=zone)
+    start = start_local.astimezone(timezone.utc).isoformat()
+    end = end_local.astimezone(timezone.utc).isoformat()
     counts = count_events_in_window(conn, start_iso=start, end_iso=end)
 
     now = datetime.now(timezone.utc)
-    pool = render_pool_snapshot(conn, now=now, max_rows=50)
+    pool = render_pool_snapshot(conn, now=now, max_rows=max_rows)
 
     return (
         f"🌅 ganren 日报 · {today.isoformat()} 早 10:00\n"
@@ -191,13 +201,21 @@ def render_morning_digest(conn: sqlite3.Connection, *, today: date) -> str:
     )
 
 
-def render_evening_digest(conn: sqlite3.Connection, *, today: date) -> str:
-    start = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=timezone.utc).isoformat()
+def render_evening_digest(
+    conn: sqlite3.Connection,
+    *,
+    today: date,
+    max_rows: int = 50,
+    tz: str = "UTC",
+) -> str:
+    zone = ZoneInfo(tz)
+    start_local = datetime(today.year, today.month, today.day, 0, 0, 0, tzinfo=zone)
+    start = start_local.astimezone(timezone.utc).isoformat()
     end = datetime.now(timezone.utc).isoformat()
     counts = count_events_in_window(conn, start_iso=start, end_iso=end)
 
     now = datetime.now(timezone.utc)
-    pool = render_pool_snapshot(conn, now=now, max_rows=50)
+    pool = render_pool_snapshot(conn, now=now, max_rows=max_rows)
 
     return (
         f"🌆 ganren 日报 · {today.isoformat()} 晚 18:00\n"
@@ -230,11 +248,13 @@ async def push_morning_digest(
     *,
     webhook_url: str | None,
     today: date,
+    max_rows: int = 50,
+    tz: str = "UTC",
 ) -> bool:
     if not should_push("morning_digest"):
         return False
     try:
-        text = render_morning_digest(conn, today=today)
+        text = render_morning_digest(conn, today=today, max_rows=max_rows, tz=tz)
     except Exception:
         return False
     return await post_text(webhook_url, text)
@@ -245,11 +265,13 @@ async def push_evening_digest(
     *,
     webhook_url: str | None,
     today: date,
+    max_rows: int = 50,
+    tz: str = "UTC",
 ) -> bool:
     if not should_push("evening_digest"):
         return False
     try:
-        text = render_evening_digest(conn, today=today)
+        text = render_evening_digest(conn, today=today, max_rows=max_rows, tz=tz)
     except Exception:
         return False
     return await post_text(webhook_url, text)
@@ -260,6 +282,7 @@ async def push_publish_snapshot(
     *,
     webhook_url: str | None,
     enabled: bool = True,
+    max_rows: int = 50,
 ) -> bool:
     if not enabled:
         return False
@@ -267,7 +290,7 @@ async def push_publish_snapshot(
         return False
     try:
         now = datetime.now(timezone.utc)
-        text = render_pool_snapshot(conn, now=now, max_rows=50)
+        text = render_pool_snapshot(conn, now=now, max_rows=max_rows)
     except Exception:
         return False
     return await post_text(webhook_url, text)

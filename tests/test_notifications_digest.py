@@ -290,3 +290,63 @@ async def test_push_publish_snapshot_respects_config_off(tmp_path):
     )
     assert ok is False
     assert not route.called
+
+
+def test_render_pool_snapshot_respects_custom_max_rows(tmp_path):
+    """I1 regression: snapshot_max threading."""
+    from ganren_platform.notifications.digest import render_pool_snapshot
+    from ganren_platform.db import get_connection, migrate
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    base = "2026-06-10T08:00:00+00:00"
+    for i in range(30):
+        conn.execute(
+            "INSERT INTO tasks (id, title, description, context_summary, tags, "
+            "ai_involvement, agent_autonomy, difficulty, status, created_by, created_at) "
+            "VALUES (?, ?, 'D','S','[\"IC\"]','L2','L3','routine','open','alice',?)",
+            (f"t_{i:03d}", f"task {i}", base),
+        )
+    now = datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc)
+    out = render_pool_snapshot(conn, now=now, max_rows=10)
+    assert "30 条 active" in out
+    assert "还有 20 条" in out
+
+
+def test_render_morning_digest_uses_scheduler_tz(tmp_path):
+    """I2 regression: window built in scheduler_tz, not UTC."""
+    from ganren_platform.notifications.digest import render_morning_digest
+    from ganren_platform.db import get_connection, migrate
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    # 2026-06-09 22:00 Shanghai = 2026-06-09 14:00 UTC — in window
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, context_summary, tags, "
+        "ai_involvement, agent_autonomy, difficulty, status, created_by, created_at) "
+        "VALUES ('t1','T','D','S','[\"IC\"]','L2','L3','routine','open','alice','2026-06-09T14:00:00+00:00')"
+    )
+    conn.execute(
+        "INSERT INTO events (id, task_id, type, actor, payload, created_at, tags_snapshot) "
+        "VALUES ('e1','t1','task.created','alice','{}','2026-06-09T14:00:00+00:00','[\"IC\"]')"
+    )
+    # 2026-06-10 00:30 Shanghai = 2026-06-09 16:30 UTC — outside Shanghai window (Tuesday morning)
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, context_summary, tags, "
+        "ai_involvement, agent_autonomy, difficulty, status, created_by, created_at) "
+        "VALUES ('t2','T2','D','S','[\"IC\"]','L2','L3','routine','open','alice','2026-06-09T16:30:00+00:00')"
+    )
+    conn.execute(
+        "INSERT INTO events (id, task_id, type, actor, payload, created_at, tags_snapshot) "
+        "VALUES ('e2','t2','task.created','alice','{}','2026-06-09T16:30:00+00:00','[\"IC\"]')"
+    )
+    out = render_morning_digest(conn, today=date(2026, 6, 10), tz="Asia/Shanghai")
+    # Window is 2026-06-09 00:00-23:59 Shanghai = 2026-06-08 16:00 UTC to 2026-06-09 15:59 UTC
+    # t1 at 14:00 UTC is in window; t2 at 16:30 UTC is NOT
+    # So 摘要 should show task.created = 1
+    assert "📌 发布" in out
+    # Verify only 1 event counted (look for the digit 1 after 📌 发布 in the summary block)
+    lines = out.split("\n")
+    summary_idx = next(i for i, l in enumerate(lines) if "📌 发布" in l)
+    numbers_line = lines[summary_idx + 1].split()
+    assert numbers_line[0] == "1", f"Expected task.created count=1, got line {lines[summary_idx+1]!r}"

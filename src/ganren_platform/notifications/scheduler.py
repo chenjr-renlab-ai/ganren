@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date as _date
+from datetime import datetime
 from typing import Optional
+from zoneinfo import ZoneInfo
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -27,7 +28,9 @@ def _parse_cron(expr: str, tz: str) -> Optional[CronTrigger]:
         return None
 
 
-def _make_morning_callback(db_path: str, webhook_url: Optional[str]):
+def _make_morning_callback(
+    db_path: str, webhook_url: Optional[str], max_rows: int, tz: str
+):
     def job():
         try:
             conn = get_connection(db_path)
@@ -36,7 +39,9 @@ def _make_morning_callback(db_path: str, webhook_url: Optional[str]):
                     digest.push_morning_digest(
                         conn,
                         webhook_url=webhook_url,
-                        today=_date.today(),
+                        today=datetime.now(ZoneInfo(tz)).date(),
+                        max_rows=max_rows,
+                        tz=tz,
                     )
                 )
             finally:
@@ -46,7 +51,9 @@ def _make_morning_callback(db_path: str, webhook_url: Optional[str]):
     return job
 
 
-def _make_evening_callback(db_path: str, webhook_url: Optional[str]):
+def _make_evening_callback(
+    db_path: str, webhook_url: Optional[str], max_rows: int, tz: str
+):
     def job():
         try:
             conn = get_connection(db_path)
@@ -55,7 +62,9 @@ def _make_evening_callback(db_path: str, webhook_url: Optional[str]):
                     digest.push_evening_digest(
                         conn,
                         webhook_url=webhook_url,
-                        today=_date.today(),
+                        today=datetime.now(ZoneInfo(tz)).date(),
+                        max_rows=max_rows,
+                        tz=tz,
                     )
                 )
             finally:
@@ -73,7 +82,9 @@ def build_scheduler(cfg: Config) -> BackgroundScheduler:
     morning_trigger = _parse_cron(cfg.morning_digest_cron, cfg.scheduler_tz)
     if morning_trigger is not None:
         sched.add_job(
-            _make_morning_callback(cfg.db_path, digest_webhook),
+            _make_morning_callback(
+                cfg.db_path, digest_webhook, cfg.snapshot_max, cfg.scheduler_tz
+            ),
             trigger=morning_trigger,
             id="morning_digest",
         )
@@ -81,7 +92,9 @@ def build_scheduler(cfg: Config) -> BackgroundScheduler:
     evening_trigger = _parse_cron(cfg.evening_digest_cron, cfg.scheduler_tz)
     if evening_trigger is not None:
         sched.add_job(
-            _make_evening_callback(cfg.db_path, digest_webhook),
+            _make_evening_callback(
+                cfg.db_path, digest_webhook, cfg.snapshot_max, cfg.scheduler_tz
+            ),
             trigger=evening_trigger,
             id="evening_digest",
         )

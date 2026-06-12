@@ -220,3 +220,4 @@ HuangTang 第 1 条反馈：
 
 - 2026-06-10：基于 HuangTang 试用反馈 + 用户体验诉求，初始版本写下。
 - HuangTang 提交 summary 完整存档于 events 表 `task.submitted` payload 中（任务 id `01KTK4NEK1SNGQAT642DA0M8A0`），随时可回溯佐证。
+- 2026-06-10：V2 #4 实施时简化了 spec §3.4 的 publish 池快照消息，没做 bucket-summary 一行预览和"← 新"高亮。原因：emoji 等宽对齐风险（spec §10 开放问题 #4）+ MVP 节奏优先。补全留 V2.x（追加 `new_task_id` 参数 + bucket header row）。
