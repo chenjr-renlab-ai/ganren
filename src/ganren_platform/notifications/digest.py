@@ -12,10 +12,51 @@ from __future__ import annotations
 
 import sqlite3
 import time
+import unicodedata
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from .slack import post_text
+
+
+def _cell_width(s: str) -> int:
+    """估算字符串在等宽字体（Slack 代码块）里可视占用的 cell 数。
+
+    CJK 字符 & emoji 算 2 cells，ASCII 算 1。
+    依据 Unicode East Asian Width 属性 + 常见 emoji 区段。
+    """
+    w = 0
+    for c in s:
+        cp = ord(c)
+        if cp >= 0x1F000 or (0x2600 <= cp <= 0x27BF):
+            w += 2
+        elif unicodedata.east_asian_width(c) in ("W", "F"):
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def _truncate_cells(s: str, width: int) -> str:
+    """按可视 cells 截断到 width。溢出尾部补 '...'。"""
+    if _cell_width(s) <= width:
+        return s
+    out: list[str] = []
+    used = 0
+    for c in s:
+        cw = _cell_width(c)
+        if used + cw > width - 3:
+            break
+        out.append(c)
+        used += cw
+    return "".join(out) + "..."
+
+
+def _pad_cells(s: str, width: int) -> str:
+    """先按 cells 截断到 width，再补空格使可视宽度恰好 = width。"""
+    s = _truncate_cells(s, width)
+    pad = width - _cell_width(s)
+    return s + " " * max(pad, 0)
 
 
 def state_dwell(row: sqlite3.Row, now: datetime) -> str:
@@ -93,12 +134,6 @@ def _short_id(task_id: str) -> str:
     return f"#t_{task_id[-6:]}"
 
 
-def _truncate(s: str, width: int) -> str:
-    if len(s) <= width:
-        return s
-    return s[: width - 3] + "..."
-
-
 def _format_actor(row: sqlite3.Row) -> str:
     if row["status"] == "open":
         return "-"
@@ -132,17 +167,22 @@ def render_pool_snapshot(
 
     header_line = f"当前任务池（共 {total} 条 active）："
     out_lines = [header_line, "```"]
+    # 列宽按可视 cells 计算（CJK/emoji 算 2 cells），让 Slack 等宽字体下真正对齐
     out_lines.append(
-        f"{'状态':<10}{'ID':<11}{'标题':<33}{'负责人':<11}{'停留':<6}"
+        _pad_cells("状态", 10)
+        + _pad_cells("ID", 11)
+        + _pad_cells("标题", 36)
+        + _pad_cells("负责人", 12)
+        + _pad_cells("停留", 6)
     )
     out_lines.append("─" * 70)
     for r in rows:
         out_lines.append(
-            f"{STATUS_LABEL[r['status']]:<10}"
-            f"{_short_id(r['id']):<11}"
-            f"{_truncate(r['title'], 32):<33}"
-            f"{_truncate(_format_actor(r), 10):<11}"
-            f"{state_dwell(r, now):<6}"
+            _pad_cells(STATUS_LABEL[r["status"]], 10)
+            + _pad_cells(_short_id(r["id"]), 11)
+            + _pad_cells(r["title"], 36)
+            + _pad_cells(_format_actor(r), 12)
+            + _pad_cells(state_dwell(r, now), 6)
         )
 
     if total > max_rows:

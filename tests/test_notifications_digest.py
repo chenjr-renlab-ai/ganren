@@ -350,3 +350,51 @@ def test_render_morning_digest_uses_scheduler_tz(tmp_path):
     summary_idx = next(i for i, l in enumerate(lines) if "📌 发布" in l)
     numbers_line = lines[summary_idx + 1].split()
     assert numbers_line[0] == "1", f"Expected task.created count=1, got line {lines[summary_idx+1]!r}"
+
+
+def test_cell_width_handles_cjk_and_emoji():
+    from ganren_platform.notifications.digest import _cell_width
+    assert _cell_width("abc") == 3        # ASCII
+    assert _cell_width("中文") == 4        # 2 CJK × 2
+    assert _cell_width("🟢") == 2          # emoji
+    assert _cell_width("a中b") == 4        # mixed
+
+
+def test_pad_cells_aligns_mixed_widths():
+    from ganren_platform.notifications.digest import _pad_cells, _cell_width
+    a = _pad_cells("smoke", 33)            # 5 cells → pad to 33
+    b = _pad_cells("把首页响应时间从 2.1s 压到 800ms 以内", 33)
+    # 两条 cell 宽度应该相同（都是 33 cells）
+    assert _cell_width(a) == 33
+    assert _cell_width(b) == 33
+
+
+def test_render_pool_snapshot_aligns_cjk_and_ascii_titles(tmp_path):
+    """对齐回归：长 CJK 标题和短 ASCII 标题在等宽字体下应该把右边的列对齐到同一列起点。"""
+    from ganren_platform.notifications.digest import render_pool_snapshot, _cell_width
+    from ganren_platform.db import get_connection, migrate
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    base = "2026-06-10T08:00:00+00:00"
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, context_summary, tags, "
+        "ai_involvement, agent_autonomy, difficulty, status, created_by, created_at) "
+        "VALUES ('t1','smoke','D','S','[\"IC\"]','L2','L3','routine','open','alice',?)",
+        (base,),
+    )
+    conn.execute(
+        "INSERT INTO tasks (id, title, description, context_summary, tags, "
+        "ai_involvement, agent_autonomy, difficulty, status, created_by, created_at) "
+        "VALUES ('t2','把首页响应时间从 2.1s 压到 800ms 以内','D','S','[\"IC\"]','L2','L3','routine','open','alice',?)",
+        (base,),
+    )
+    now = datetime(2026, 6, 10, 12, 0, tzinfo=timezone.utc)
+    out = render_pool_snapshot(conn, now=now, max_rows=50)
+    # 找出两条数据行（含 #t_ 前缀的行）
+    data_rows = [ln for ln in out.split("\n") if "#t_" in ln]
+    assert len(data_rows) == 2
+    # 两条行的可视 cell 宽度应该一致 —— 这意味着"停留"列在同一位置
+    w1 = _cell_width(data_rows[0])
+    w2 = _cell_width(data_rows[1])
+    assert w1 == w2, f"行可视宽度不一致：{w1} vs {w2}\n  row1: {data_rows[0]!r}\n  row2: {data_rows[1]!r}"
