@@ -14,6 +14,8 @@ import sqlite3
 import time
 from datetime import date, datetime, timedelta, timezone
 
+from .slack import post_text
+
 
 def state_dwell(row: sqlite3.Row, now: datetime) -> str:
     """当前状态下任务停留时长。
@@ -221,3 +223,51 @@ def should_push(kind: str) -> bool:
         return False
     _last_push[kind] = now
     return True
+
+
+async def push_morning_digest(
+    conn: sqlite3.Connection,
+    *,
+    webhook_url: str | None,
+    today: date,
+) -> bool:
+    if not should_push("morning_digest"):
+        return False
+    try:
+        text = render_morning_digest(conn, today=today)
+    except Exception:
+        return False
+    return await post_text(webhook_url, text)
+
+
+async def push_evening_digest(
+    conn: sqlite3.Connection,
+    *,
+    webhook_url: str | None,
+    today: date,
+) -> bool:
+    if not should_push("evening_digest"):
+        return False
+    try:
+        text = render_evening_digest(conn, today=today)
+    except Exception:
+        return False
+    return await post_text(webhook_url, text)
+
+
+async def push_publish_snapshot(
+    conn: sqlite3.Connection,
+    *,
+    webhook_url: str | None,
+    enabled: bool = True,
+) -> bool:
+    if not enabled:
+        return False
+    if not should_push("publish_snapshot"):
+        return False
+    try:
+        now = datetime.now(timezone.utc)
+        text = render_pool_snapshot(conn, now=now, max_rows=50)
+    except Exception:
+        return False
+    return await post_text(webhook_url, text)

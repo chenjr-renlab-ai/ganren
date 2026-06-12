@@ -229,3 +229,64 @@ def test_should_push_different_kinds_independent(monkeypatch):
     monkeypatch.setattr(digest.time, "time", lambda: 1000.0)
     digest.should_push("k1")
     assert digest.should_push("k2") is True
+
+
+import respx
+import httpx
+
+@respx.mock
+async def test_push_morning_digest_posts_to_webhook(tmp_path):
+    from ganren_platform.notifications import digest
+    from ganren_platform.db import get_connection, migrate
+    digest._last_push.clear()
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    route = respx.post("https://hooks.slack.com/morning").mock(
+        return_value=httpx.Response(200)
+    )
+    ok = await digest.push_morning_digest(
+        conn,
+        webhook_url="https://hooks.slack.com/morning",
+        today=date(2026, 6, 10),
+    )
+    assert ok is True
+    assert route.called
+    body = route.calls[0].request.content.decode("utf-8")
+    assert "ganren 日报" in body
+    assert "2026-06-10" in body
+
+@respx.mock
+async def test_push_throttled_within_window(tmp_path):
+    from ganren_platform.notifications import digest
+    from ganren_platform.db import get_connection, migrate
+    digest._last_push.clear()
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    respx.post("https://hooks.slack.com/x").mock(return_value=httpx.Response(200))
+    ok1 = await digest.push_morning_digest(
+        conn, webhook_url="https://hooks.slack.com/x", today=date(2026, 6, 10)
+    )
+    ok2 = await digest.push_morning_digest(
+        conn, webhook_url="https://hooks.slack.com/x", today=date(2026, 6, 10)
+    )
+    assert ok1 is True
+    assert ok2 is False  # 节流跳过
+
+@respx.mock
+async def test_push_publish_snapshot_respects_config_off(tmp_path):
+    from ganren_platform.notifications import digest
+    from ganren_platform.db import get_connection, migrate
+    digest._last_push.clear()
+    db = str(tmp_path / "t.db")
+    migrate(db)
+    conn = get_connection(db)
+    route = respx.post("https://hooks.slack.com/x").mock(return_value=httpx.Response(200))
+    ok = await digest.push_publish_snapshot(
+        conn,
+        webhook_url="https://hooks.slack.com/x",
+        enabled=False,
+    )
+    assert ok is False
+    assert not route.called
