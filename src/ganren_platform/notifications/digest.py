@@ -47,3 +47,32 @@ def previous_workday(today: date) -> date:
     if today.weekday() == 0:
         return today - timedelta(days=3)
     return today - timedelta(days=1)
+
+
+TRACKED_EVENT_TYPES = (
+    "task.created",
+    "task.claimed",
+    "task.signed_off",
+    "task.rejected",
+    "question.asked",
+    "question.answered",
+)
+
+
+def count_events_in_window(
+    conn: sqlite3.Connection,
+    *,
+    start_iso: str,
+    end_iso: str,
+) -> dict[str, int]:
+    """聚合窗口内每类事件的发生次数。窗口左闭右闭。"""
+    counts = {t: 0 for t in TRACKED_EVENT_TYPES}
+    rows = conn.execute(
+        "SELECT type, COUNT(*) c FROM events "
+        "WHERE created_at >= ? AND created_at <= ? AND type IN "
+        "({}) GROUP BY type".format(",".join("?" * len(TRACKED_EVENT_TYPES))),
+        (start_iso, end_iso, *TRACKED_EVENT_TYPES),
+    ).fetchall()
+    for r in rows:
+        counts[r["type"]] = r["c"]
+    return counts
